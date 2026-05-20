@@ -14,6 +14,12 @@
         font-family: Arial, sans-serif;
         background: #121212;
         color: #ffffff;
+        transition: background 0.3s ease, color 0.3s ease;
+      }
+
+      body.light-theme {
+        background: #f4f4f7;
+        color: #111111;
       }
 
       .clock {
@@ -22,6 +28,12 @@
         border-radius: 16px;
         background: rgba(255, 255, 255, 0.08);
         box-shadow: 0 16px 40px rgba(0, 0, 0, 0.25);
+        transition: background 0.3s ease, box-shadow 0.3s ease;
+      }
+
+      body.light-theme .clock {
+        background: rgba(255, 255, 255, 0.92);
+        box-shadow: 0 16px 40px rgba(0, 0, 0, 0.12);
       }
 
       .clock h1 {
@@ -35,16 +47,40 @@
         font-weight: 700;
         letter-spacing: 0.08em;
       }
+
+      .theme-toggle {
+        margin-top: 1.5rem;
+        padding: 0.8rem 1.4rem;
+        border: none;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.14);
+        color: inherit;
+        font-size: 1rem;
+        cursor: pointer;
+        transition: background 0.2s ease;
+      }
+
+      .theme-toggle:hover {
+        background: rgba(255, 255, 255, 0.22);
+      }
+
+      body.light-theme .theme-toggle {
+        background: rgba(0, 0, 0, 0.08);
+      }
     </style>
   </head>
   <body>
     <section class="clock">
       <h1>Reloj Simple</h1>
       <div id="time" class="time">00:00:00</div>
+      <button id="themeToggle" class="theme-toggle" type="button">Cambiar a tema claro</button>
     </section>
 
     <script>
       const timeElement = document.getElementById('time');
+
+      const themeToggle = document.getElementById('themeToggle');
+      const rootElement = document.documentElement;
 
       function updateClock() {
         const now = new Date();
@@ -54,8 +90,21 @@
         timeElement.textContent = `${hours}:${minutes}:${seconds}`;
       }
 
+      function updateThemeText() {
+        const isLight = document.body.classList.contains('light-theme');
+        themeToggle.textContent = isLight ? 'Cambiar a tema oscuro' : 'Cambiar a tema claro';
+      }
+
+      function toggleTheme() {
+        document.body.classList.toggle('light-theme');
+        updateThemeText();
+      }
+
+      themeToggle.addEventListener('click', toggleTheme);
+
       updateClock();
       setInterval(updateClock, 1000);
+      updateThemeText();
     </script>
   </body>
 </html>
