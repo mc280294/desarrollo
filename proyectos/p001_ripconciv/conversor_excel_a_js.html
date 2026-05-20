@@ -1,0 +1,897 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Conversor Excel → preciosripconciv.js - Fusión de datos</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = { darkMode: 'class' };
+    </script>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.13.3/dist/cdn.min.js"></script>
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        [x-cloak] { display: none !important; }
+        .scrollbar-thin::-webkit-scrollbar { width: 6px; }
+        .scrollbar-thin::-webkit-scrollbar-track { background: transparent; }
+        .scrollbar-thin::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+        .dark .scrollbar-thin::-webkit-scrollbar-thumb { background: #475569; }
+        .drop-zone { border: 2px dashed #cbd5e1; transition: all 0.3s; }
+        .drop-zone.dragover { border-color: #3b82f6; background: rgba(59,130,246,0.05); }
+        .dark .drop-zone { border-color: #475569; }
+        .dark .drop-zone.dragover { border-color: #60a5fa; background: rgba(96,165,250,0.1); }
+        .mapping-select { min-width: 140px; }
+        .code-preview { font-family: 'JetBrains Mono', 'Fira Code', monospace; font-size: 12px; line-height: 1.5; }
+        .badge { @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium; }
+        .resumen-card { @apply bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4 border border-gray-200 dark:border-gray-600; }
+    </style>
+    <script>
+        (function () {
+            try {
+                const saved = localStorage.getItem('conv_theme') || 'light';
+                if (saved === 'dark') document.documentElement.classList.add('dark');
+            } catch(e) {}
+        })();
+    </script>
+</head>
+<body class="bg-gray-50 text-gray-800 dark:bg-gray-900 dark:text-gray-100 min-h-screen transition-colors duration-300">
+
+<div x-data="conversorApp()" x-init="init()" class="p-4 md:p-6 max-w-6xl mx-auto">
+
+    <!-- Header -->
+    <header class="mb-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+        <div>
+            <h1 class="text-2xl md:text-3xl font-bold">
+                <i class="fas fa-file-excel text-green-500 mr-2"></i>
+                Conversor Excel → <span class="text-blue-600 dark:text-blue-400">preciosripconciv.js</span>
+            </h1>
+            <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                <i class="fas fa-database mr-1 text-blue-400"></i>
+                Fusiona datos nuevos con tu base existente, eliminando duplicados automáticamente
+            </p>
+        </div>
+        <button @click="toggleTheme()"
+                class="px-3 py-2 rounded-md text-sm font-medium border border-gray-300 dark:border-gray-600 bg-white hover:bg-gray-100 dark:bg-gray-800 dark:hover:bg-gray-700 transition flex items-center gap-2 shadow-sm">
+            <i class="fas" :class="themeIcon"></i>
+            <span x-text="themeLabel"></span>
+        </button>
+    </header>
+
+    <!-- BARRA DE RESUMEN GLOBAL (siempre visible cuando hay datos) -->
+    <div x-show="totalCombinado > 0" class="bg-white dark:bg-gray-800 rounded-lg shadow border border-blue-200 dark:border-blue-800 p-4 mb-4">
+        <div class="flex flex-wrap items-center gap-4 md:gap-8 text-sm">
+            <div class="flex items-center gap-2">
+                <i class="fas fa-database text-blue-500"></i>
+                <span class="text-gray-500">Base existente:</span>
+                <strong class="text-blue-600 dark:text-blue-400" x-text="datosBase.length"></strong>
+            </div>
+            <div class="flex items-center gap-2">
+                <i class="fas fa-file-excel text-green-500"></i>
+                <span class="text-gray-500">Nuevos desde Excel:</span>
+                <strong class="text-green-600 dark:text-green-400" x-text="registrosDesdeExcel.length"></strong>
+            </div>
+            <div x-show="duplicadosEncontrados > 0" class="flex items-center gap-2">
+                <i class="fas fa-clone text-orange-500"></i>
+                <span class="text-gray-500">Duplicados omitidos:</span>
+                <strong class="text-orange-600 dark:text-orange-400" x-text="duplicadosEncontrados"></strong>
+            </div>
+            <div class="flex items-center gap-2">
+                <i class="fas fa-layer-group text-purple-500"></i>
+                <span class="text-gray-500">Total combinado:</span>
+                <strong class="text-purple-600 dark:text-purple-400 text-lg" x-text="totalCombinado"></strong>
+            </div>
+            <div x-show="!minificado && totalCombinado > 0" class="text-xs text-gray-400 ml-auto">
+                <span x-text="'~' + (totalCombinado * 120 / 1024).toFixed(1) + ' KB'"></span>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===================== PASO 1: CARGAR BASE EXISTENTE ===================== -->
+    <div class="bg-white dark:bg-gray-800 rounded-lg shadow border border-gray-200 dark:border-gray-700 p-6 mb-4">
+        <h2 class="text-lg font-semibold mb-3 flex items-center gap-2">
+            <span class="bg-blue-600 text-white w-7 h-7 rounded-full flex items-center justify-center text-sm font-bold">1</span>
+            Cargar base existente
+            <span class="text-xs font-normal text-gray-400 ml-1">(opcional — solo si quieres SUMAR a lo que ya tienes)</span>
+        </h2>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <!-- Opción A: Cargar preciosripconciv.js -->
+            <div @dragover.prevent="dragOverJS = true"
+                 @dragleave.prevent="dragOverJS = false"
+                 @drop.prevent="handleDropJS($event)"
+                 class="drop-zone rounded-lg p-5 text-center cursor-pointer"
+                 :class="{'dragover': dragOverJS, 'border-green-400': datosBase.length > 0}"
+                 @click="document.getElementById('jsFileInput').click()">
+
+                <template x-if="datosBase.length === 0">
+                    <div>
+                        <i class="fas fa-file-code text-4xl text-gray-300 dark:text-gray-600 mb-3"></i>
+                        <p class="text-sm font-medium text-gray-600 dark:text-gray-300">
+                            Arrastra aquí tu <strong>preciosripconciv.js</strong>
+                        </p>
+                        <p class="text-xs text-gray-400 mt-1">o haz clic para seleccionar el archivo</p>
+                    </div>
+                </template>
+                <template x-if="datosBase.length > 0">
+                    <div>
+                        <i class="fas fa-check-circle text-4xl text-green-500 mb-3"></i>
+                        <p class="text-sm font-medium text-green-600 dark:text-green-400">
+                            <i class="fas fa-file-code mr-2"></i>
+                            Base cargada: <strong x-text="datosBase.length + ' registros'"></strong>
+                        </p>
+                        <p class="text-xs text-gray-400 mt-1" x-text="'Archivo: ' + nombreBaseJS"></p>
+                        <button @click.stop="datosBase = []; nombreBaseJS = ''; recalcularTodo()" class="mt-2 text-xs text-red-500 hover:underline">
+                            <i class="fas fa-times mr-1"></i>Quitar base
+                        </button>
+                    </div>
+                </template>
+            </div>
+            <input type="file" id="jsFileInput" accept=".js" @change="handleJSSelect($event)" class="hidden">
+
+            <!-- Opción B: Empezar desde cero -->
+            <div class="flex flex-col items-center justify-center p-5 rounded-lg border-2 border-dashed border-gray-200 dark:border-gray-700">
+                <i class="fas fa-plus-circle text-3xl text-gray-300 dark:text-gray-600 mb-2"></i>
+                <p class="text-sm text-gray-500 dark:text-gray-400 text-center">
+                    Si no cargas base existente,<br>
+                    se creará un archivo <strong>nuevo</strong> desde cero.
+                </p>
+                <p class="text-xs text-gray-400 mt-2">
+                    Solo con los datos del Excel que cargues en el Paso 2
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===================== PASO 2: CARGAR EXCEL ===================== -->
+    <div class="bg-white dark:bg-gray-800 rounded-lg shadow border border-gray-200 dark:border-gray-700 p-6 mb-4">
+        <h2 class="text-lg font-semibold mb-4 flex items-center gap-2">
+            <span class="bg-blue-600 text-white w-7 h-7 rounded-full flex items-center justify-center text-sm font-bold">2</span>
+            Cargar nuevos datos desde Excel
+        </h2>
+
+        <div @dragover.prevent="dragOver = true"
+             @dragleave.prevent="dragOver = false"
+             @drop.prevent="handleDrop($event)"
+             class="drop-zone rounded-lg p-8 text-center cursor-pointer"
+             :class="{'dragover': dragOver, 'border-green-400': archivoCargado}"
+             @click="document.getElementById('fileInput').click()">
+
+            <template x-if="!archivoCargado">
+                <div>
+                    <i class="fas fa-cloud-upload-alt text-5xl text-gray-300 dark:text-gray-600 mb-4"></i>
+                    <p class="text-lg font-medium text-gray-600 dark:text-gray-300">
+                        Arrastra tu archivo Excel aquí
+                    </p>
+                    <p class="text-sm text-gray-400 dark:text-gray-500 mt-1">
+                        o haz clic para seleccionar (.xlsx, .xls, .csv)
+                    </p>
+                </div>
+            </template>
+            <template x-if="archivoCargado">
+                <div>
+                    <i class="fas fa-check-circle text-5xl text-green-500 mb-4"></i>
+                    <p class="text-lg font-medium text-green-600 dark:text-green-400">
+                        <i class="fas fa-file-excel mr-2"></i>
+                        <span x-text="nombreArchivo"></span>
+                    </p>
+                    <p class="text-sm text-gray-400 mt-1">
+                        <span x-text="totalRegistros + ' registros encontrados'"></span>
+                        · <span x-text="hojasDisponibles.length + ' hoja(s)'"></span>
+                    </p>
+                    <button @click.stop="resetCargaExcel()" class="mt-2 text-xs text-red-500 hover:underline">
+                        <i class="fas fa-times mr-1"></i>Quitar archivo Excel
+                    </button>
+                </div>
+            </template>
+        </div>
+        <input type="file" id="fileInput" accept=".xlsx,.xls,.csv" @change="handleFileSelect($event)" class="hidden">
+
+        <!-- Selector de hoja -->
+        <div x-show="hojasDisponibles.length > 0" class="mt-4 flex items-center gap-3">
+            <label class="text-sm font-medium text-gray-600 dark:text-gray-400">Hoja:</label>
+            <select x-model="hojaSeleccionada" @change="cargarHoja()" 
+                    class="flex-1 max-w-xs px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-sm outline-none focus:ring-2 focus:ring-blue-500">
+                <template x-for="h in hojasDisponibles" :key="h">
+                    <option :value="h" x-text="h"></option>
+                </template>
+            </select>
+            <span class="text-xs text-gray-400" x-text="'Filas: ' + totalRegistros + ' · Columnas: ' + columnasDisponibles.length"></span>
+        </div>
+    </div>
+
+    <!-- ===================== PASO 3: MAPEO DE COLUMNAS ===================== -->
+    <div x-show="archivoCargado && columnasDisponibles.length > 0" class="bg-white dark:bg-gray-800 rounded-lg shadow border border-gray-200 dark:border-gray-700 p-6 mb-4">
+        <h2 class="text-lg font-semibold mb-4 flex items-center gap-2">
+            <span class="bg-blue-600 text-white w-7 h-7 rounded-full flex items-center justify-center text-sm font-bold">3</span>
+            Mapeo de columnas del Excel
+            <span class="text-xs font-normal text-gray-400 ml-2">(se detectó automáticamente, puedes ajustar)</span>
+        </h2>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div>
+                <label class="block text-xs font-medium text-gray-500 mb-1">📅 Año <span class="text-red-500">*</span></label>
+                <select x-model="mapping.y" class="mapping-select w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-sm outline-none focus:ring-2 focus:ring-blue-500">
+                    <option value="">— No mapear —</option>
+                    <template x-for="col in columnasDisponibles" :key="col">
+                        <option :value="col" x-text="col"></option>
+                    </template>
+                </select>
+            </div>
+            <div>
+                <label class="block text-xs font-medium text-gray-500 mb-1">📝 Descripción <span class="text-red-500">*</span></label>
+                <select x-model="mapping.d" class="mapping-select w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-sm outline-none focus:ring-2 focus:ring-blue-500">
+                    <option value="">— No mapear —</option>
+                    <template x-for="col in columnasDisponibles" :key="col">
+                        <option :value="col" x-text="col"></option>
+                    </template>
+                </select>
+            </div>
+            <div>
+                <label class="block text-xs font-medium text-gray-500 mb-1">💰 Precio (USD) <span class="text-red-500">*</span></label>
+                <select x-model="mapping.p" class="mapping-select w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-sm outline-none focus:ring-2 focus:ring-blue-500">
+                    <option value="">— No mapear —</option>
+                    <template x-for="col in columnasDisponibles" :key="col">
+                        <option :value="col" x-text="col"></option>
+                    </template>
+                </select>
+            </div>
+            <div>
+                <label class="block text-xs font-medium text-gray-500 mb-1">📏 Unidad</label>
+                <select x-model="mapping.u" class="mapping-select w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-sm outline-none focus:ring-2 focus:ring-blue-500">
+                    <option value="">— No mapear —</option>
+                    <template x-for="col in columnasDisponibles" :key="col">
+                        <option :value="col" x-text="col"></option>
+                    </template>
+                </select>
+            </div>
+            <div>
+                <label class="block text-xs font-medium text-gray-500 mb-1">🏗️ Proyecto</label>
+                <select x-model="mapping.pr" class="mapping-select w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-sm outline-none focus:ring-2 focus:ring-blue-500">
+                    <option value="">— No mapear —</option>
+                    <template x-for="col in columnasDisponibles" :key="col">
+                        <option :value="col" x-text="col"></option>
+                    </template>
+                </select>
+            </div>
+            <div>
+                <label class="block text-xs font-medium text-gray-500 mb-1">🏷️ Categoría</label>
+                <select x-model="mapping.c" class="mapping-select w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-sm outline-none focus:ring-2 focus:ring-blue-500">
+                    <option value="">— No mapear —</option>
+                    <template x-for="col in columnasDisponibles" :key="col">
+                        <option :value="col" x-text="col"></option>
+                    </template>
+                </select>
+            </div>
+        </div>
+
+        <!-- Fila de ejemplo -->
+        <div x-show="registrosDesdeExcel.length > 0" class="mt-4 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
+            <p class="text-xs font-medium text-blue-600 dark:text-blue-400 mb-2">
+                <i class="fas fa-eye mr-1"></i>Vista previa del primer registro desde Excel:
+            </p>
+            <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2 text-xs">
+                <div><span class="font-semibold text-gray-500">Año:</span> <span class="font-mono" x-text="primerRegistroExcel?.y ?? '—'"></span></div>
+                <div class="col-span-2"><span class="font-semibold text-gray-500">Descripción:</span> <span class="font-mono truncate block" x-text="primerRegistroExcel?.d ?? '—'"></span></div>
+                <div><span class="font-semibold text-gray-500">Precio:</span> <span class="font-mono" x-text="primerRegistroExcel?.p ?? '—'"></span></div>
+                <div><span class="font-semibold text-gray-500">Unidad:</span> <span class="font-mono" x-text="primerRegistroExcel?.u ?? '—'"></span></div>
+                <div><span class="font-semibold text-gray-500">Proyecto:</span> <span class="font-mono truncate block" x-text="primerRegistroExcel?.pr ?? '—'"></span></div>
+                <div><span class="font-semibold text-gray-500">Categoría:</span> <span class="font-mono truncate block" x-text="primerRegistroExcel?.c ?? '—'"></span></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===================== PASO 4: VISTA PREVIA Y GENERACIÓN ===================== -->
+    <div x-show="totalCombinado > 0" class="bg-white dark:bg-gray-800 rounded-lg shadow border border-gray-200 dark:border-gray-700 p-6 mb-4">
+        <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-4">
+            <h2 class="text-lg font-semibold flex items-center gap-2">
+                <span class="bg-blue-600 text-white w-7 h-7 rounded-full flex items-center justify-center text-sm font-bold">4</span>
+                Vista previa y descarga
+            </h2>
+
+            <div class="flex items-center gap-3">
+                <label class="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400 cursor-pointer">
+                    <input type="checkbox" x-model="opciones.minificar" class="w-4 h-4 text-blue-600 rounded">
+                    <span>Minificar</span>
+                </label>
+                <button @click="generarYDescargar()" 
+                        class="px-5 py-2.5 bg-green-600 hover:bg-green-700 text-white rounded-md text-sm font-bold transition shadow flex items-center gap-2">
+                    <i class="fas fa-download"></i>
+                    <span>Descargar <span x-text="'preciosripconciv.js'"></span></span>
+                </button>
+            </div>
+        </div>
+
+        <!-- Detalle de fusión -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
+            <div class="resumen-card">
+                <div class="text-xs text-gray-500 mb-1">📦 Base existente</div>
+                <div class="text-xl font-bold text-blue-600 dark:text-blue-400" x-text="datosBase.length"></div>
+                <div class="text-xs text-gray-400" x-text="datosBase.length > 0 ? (nombreBaseJS || 'preciosripconciv.js') : 'No cargada'"></div>
+            </div>
+            <div class="resumen-card">
+                <div class="text-xs text-gray-500 mb-1">➕ Nuevos desde Excel</div>
+                <div class="text-xl font-bold text-green-600 dark:text-green-400" x-text="registrosDesdeExcel.length"></div>
+                <div class="text-xs text-gray-400" x-text="duplicadosEncontrados > 0 ? (duplicadosEncontrados + ' duplicados omitidos') : 'Sin duplicados'"></div>
+            </div>
+            <div class="resumen-card border-purple-300 dark:border-purple-700">
+                <div class="text-xs text-gray-500 mb-1">🎯 Total combinado</div>
+                <div class="text-xl font-bold text-purple-600 dark:text-purple-400" x-text="totalCombinado"></div>
+                <div class="text-xs text-gray-400">Registros únicos</div>
+            </div>
+        </div>
+
+        <!-- Tabla de vista previa (primeros 10 del total combinado) -->
+        <div class="overflow-x-auto border border-gray-200 dark:border-gray-700 rounded-lg">
+            <table class="w-full text-xs text-left">
+                <thead class="bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 uppercase font-bold">
+                    <tr>
+                        <th class="px-3 py-2">#</th>
+                        <th class="px-3 py-2">Año</th>
+                        <th class="px-3 py-2">Descripción</th>
+                        <th class="px-3 py-2 text-right">Precio</th>
+                        <th class="px-3 py-2 text-center">Unidad</th>
+                        <th class="px-3 py-2">Proyecto</th>
+                        <th class="px-3 py-2">Categoría</th>
+                        <th class="px-3 py-2 text-center w-16">Origen</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100 dark:divide-gray-700">
+                    <template x-for="(r, i) in datosCombinados.slice(0, 10)" :key="i">
+                        <tr class="hover:bg-blue-50 dark:hover:bg-gray-700/50" :class="{'bg-green-50 dark:bg-green-900/10': r._origen === 'excel'}">
+                            <td class="px-3 py-2 text-gray-400 font-mono" x-text="i + 1"></td>
+                            <td class="px-3 py-2 font-mono" x-text="r.y"></td>
+                            <td class="px-3 py-2 truncate max-w-[250px]" :title="r.d" x-text="r.d"></td>
+                            <td class="px-3 py-2 font-mono text-right" x-text="r.p"></td>
+                            <td class="px-3 py-2 text-center font-mono" x-text="r.u || '—'"></td>
+                            <td class="px-3 py-2 truncate max-w-[180px]" :title="r.pr" x-text="r.pr || '—'"></td>
+                            <td class="px-3 py-2 truncate max-w-[140px]" :title="r.c" x-text="r.c || '—'"></td>
+                            <td class="px-3 py-2 text-center">
+                                <span x-show="r._origen === 'excel'" class="text-green-500 text-[10px] font-bold bg-green-100 dark:bg-green-900/30 px-1.5 py-0.5 rounded">
+                                    <i class="fas fa-plus"></i> Nuevo
+                                </span>
+                                <span x-show="r._origen === 'base'" class="text-blue-500 text-[10px] font-bold bg-blue-100 dark:bg-blue-900/30 px-1.5 py-0.5 rounded">
+                                    Base
+                                </span>
+                            </td>
+                        </tr>
+                    </template>
+                </tbody>
+            </table>
+        </div>
+        <p x-show="totalCombinado > 10" class="text-xs text-gray-400 mt-2 text-center">
+            Mostrando 10 de <span x-text="totalCombinado"></span> registros
+        </p>
+
+        <!-- Código generado (preview) -->
+        <div class="mt-4">
+            <div class="flex items-center justify-between mb-2">
+                <label class="text-xs font-medium text-gray-500">📄 Vista previa del JS generado:</label>
+                <button @click="copiarCodigo()" class="text-xs text-blue-600 hover:underline">
+                    <i class="fas fa-copy mr-1"></i>Copiar código
+                </button>
+            </div>
+            <div class="bg-gray-900 text-green-400 rounded-lg p-4 overflow-x-auto max-h-48 overflow-y-auto scrollbar-thin code-preview">
+                <pre><span class="text-gray-500">// preciosripconciv.js - Base de datos de rubros RIPCONCIV</span>
+<span class="text-gray-500">// Actualizado: <span x-text="fechaGeneracion"></span></span>
+<span class="text-gray-500">// Total registros: <span x-text="totalCombinado"></span></span>
+<span class="text-gray-500" x-show="datosBase.length > 0">// Base anterior: <span x-text="datosBase.length"></span> registros</span>
+<span class="text-gray-500" x-show="registrosDesdeExcel.length > 0">// Nuevos agregados: <span x-text="nuevosAgregados"></span> registros</span>
+<span class="text-gray-500" x-show="duplicadosEncontrados > 0">// Duplicados omitidos: <span x-text="duplicadosEncontrados"></span></span>
+
+<span class="text-blue-300">const</span> <span class="text-yellow-300">RUBROS_DATA</span> = [</pre>
+                <pre x-html="codigoPreview"></pre>
+                <pre>];</pre>
+            </div>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <div class="text-center text-xs text-gray-400 dark:text-gray-500 mt-8">
+        <i class="fas fa-code mr-1"></i> Desarrollado para RIPCONCIV · 
+        Los datos se procesan localmente en tu navegador, nada se envía a ningún servidor.
+    </div>
+</div>
+
+<script>
+function conversorApp() {
+    return {
+        // ==================== ESTADO GLOBAL ====================
+        // Base existente (desde preciosripconciv.js)
+        datosBase: [],
+        nombreBaseJS: '',
+
+        // Datos desde Excel
+        dragOver: false,
+        dragOverJS: false,
+        archivoCargado: false,
+        nombreArchivo: '',
+        workbook: null,
+        hojasDisponibles: [],
+        hojaSeleccionada: '',
+        datosCrudos: [],
+        columnasDisponibles: [],
+
+        // Mapeo
+        mapping: { y: '', d: '', p: '', u: '', pr: '', c: '' },
+
+        // Resultados intermedios
+        registrosDesdeExcel: [],
+
+        // Opciones
+        opciones: { minificar: false },
+
+        // Tema
+        themeMode: 'light',
+
+        // ==================== INICIALIZACIÓN ====================
+        init() {
+            const saved = localStorage.getItem('conv_theme') || 'light';
+            this.themeMode = saved;
+            this.applyTheme();
+        },
+
+        // ==================== TEMAS ====================
+        toggleTheme() {
+            this.themeMode = this.themeMode === 'light' ? 'dark' : 'light';
+            localStorage.setItem('conv_theme', this.themeMode);
+            this.applyTheme();
+        },
+        applyTheme() {
+            document.documentElement.classList.toggle('dark', this.themeMode === 'dark');
+        },
+        get themeLabel() { return this.themeMode === 'dark' ? 'Oscuro' : 'Claro'; },
+        get themeIcon() { return this.themeMode === 'dark' ? 'fa-moon' : 'fa-sun'; },
+
+        // ==================== CARGA DE BASE EXISTENTE (preciosripconciv.js) ====================
+        handleDropJS(event) {
+            this.dragOverJS = false;
+            const file = event.dataTransfer.files[0];
+            if (file) this.procesarArchivoJS(file);
+        },
+
+        handleJSSelect(event) {
+            const file = event.target.files[0];
+            if (file) this.procesarArchivoJS(file);
+            event.target.value = '';
+        },
+
+        procesarArchivoJS(file) {
+            if (!file.name.endsWith('.js')) {
+                alert('Debes seleccionar un archivo .js');
+                return;
+            }
+
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                try {
+                    const contenido = e.target.result;
+                    const registros = this.parsearJS(contenido);
+                    if (registros.length === 0) {
+                        alert('No se encontraron datos válidos en el archivo JS. Asegúrate de que contenga la variable RUBROS_DATA.');
+                        return;
+                    }
+                    this.datosBase = registros;
+                    this.nombreBaseJS = file.name;
+                    this.recalcularTodo();
+                } catch (err) {
+                    alert('Error al leer el archivo JS: ' + err.message);
+                }
+            };
+            reader.onerror = () => alert('Error al leer el archivo.');
+            reader.readAsText(file);
+        },
+
+        parsearJS(contenido) {
+            // Buscar el array RUBROS_DATA = [...]
+            const match = contenido.match(/RUBROS_DATA\s*=\s*\[([\s\S]*?)\];/);
+            if (!match) return [];
+
+            const contenidoArray = match[1];
+            const registros = [];
+            
+            // Expresión regular para encontrar cada objeto { ... }
+            const objRegex = /\{([^}]+)\}/g;
+            let objMatch;
+            
+            while ((objMatch = objRegex.exec(contenidoArray)) !== null) {
+                const objStr = objMatch[1];
+                const r = this.parsearObjetoJS(objStr);
+                if (r && r.d) {
+                    registros.push(r);
+                }
+            }
+
+            return registros;
+        },
+
+        parsearObjetoJS(objStr) {
+            const r = { y: '', d: '', p: null, u: '', pr: '', c: '' };
+            
+            const propRegex = /(\w+)\s*:\s*(?:"([^"\\]*(?:\\.[^"\\]*)*)"|'([^'\\]*(?:\\.[^'\\]*)*)'|([0-9]+(?:\.[0-9]+)?))/g;
+            let propMatch;
+            
+            while ((propMatch = propRegex.exec(objStr)) !== null) {
+                const key = propMatch[1];
+                let val = propMatch[2] !== undefined ? propMatch[2] 
+                       : (propMatch[3] !== undefined ? propMatch[3] 
+                       : propMatch[4]);
+                
+                if (typeof val === 'string') {
+                    val = val.replace(/\\"/g, '"').replace(/\\'/g, "'").replace(/\\n/g, '\n').replace(/\\r/g, '\r').replace(/\\t/g, '\t').replace(/\\\\/g, '\\');
+                }
+
+                if (key === 'y') r.y = String(val).trim();
+                else if (key === 'd') r.d = String(val).trim();
+                else if (key === 'p') r.p = typeof val === 'string' ? Number(val) : val;
+                else if (key === 'u') r.u = String(val).trim();
+                else if (key === 'pr') r.pr = String(val).trim();
+                else if (key === 'c') r.c = String(val).trim();
+            }
+
+            return r;
+        },
+
+        // ==================== CARGA DE EXCEL ====================
+        handleDrop(event) {
+            this.dragOver = false;
+            const file = event.dataTransfer.files[0];
+            if (file) this.procesarArchivo(file);
+        },
+
+        handleFileSelect(event) {
+            const file = event.target.files[0];
+            if (file) this.procesarArchivo(file);
+            event.target.value = '';
+        },
+
+        procesarArchivo(file) {
+            const ext = file.name.split('.').pop().toLowerCase();
+            if (!['xlsx', 'xls', 'csv'].includes(ext)) {
+                alert('Formato no soportado. Usa archivos .xlsx, .xls o .csv');
+                return;
+            }
+
+            this.nombreArchivo = file.name;
+            this.archivoCargado = false;
+
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                try {
+                    const data = new Uint8Array(e.target.result);
+                    this.workbook = XLSX.read(data, { type: 'array', cellDates: false });
+                    this.hojasDisponibles = this.workbook.SheetNames;
+                    this.hojaSeleccionada = this.hojasDisponibles[0];
+                    this.cargarHoja();
+                    this.archivoCargado = true;
+                } catch (err) {
+                    alert('Error al leer el archivo: ' + err.message);
+                }
+            };
+            reader.onerror = () => alert('Error al leer el archivo.');
+            reader.readAsArrayBuffer(file);
+        },
+
+        resetCargaExcel() {
+            this.archivoCargado = false;
+            this.nombreArchivo = '';
+            this.workbook = null;
+            this.hojasDisponibles = [];
+            this.hojaSeleccionada = '';
+            this.datosCrudos = [];
+            this.columnasDisponibles = [];
+            this.registrosDesdeExcel = [];
+            this.mapping = { y: '', d: '', p: '', u: '', pr: '', c: '' };
+            this.recalcularTodo();
+        },
+
+        cargarHoja() {
+            if (!this.workbook || !this.hojaSeleccionada) return;
+            const sheet = this.workbook.Sheets[this.hojaSeleccionada];
+            const json = XLSX.utils.sheet_to_json(sheet, { defval: '' });
+            this.datosCrudos = json;
+            
+            if (json.length > 0) {
+                this.columnasDisponibles = Object.keys(json[0]);
+                this.detectarMapping();
+            } else {
+                this.columnasDisponibles = [];
+                this.registrosDesdeExcel = [];
+            }
+        },
+
+        // ==================== DETECCIÓN AUTOMÁTICA DE MAPEO ====================
+        detectarMapping() {
+            const cols = this.columnasDisponibles.map(c => ({
+                original: c,
+                normalizado: c.toLowerCase()
+                    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+                    .replace(/[^a-z0-9]/g, '')
+            }));
+
+            const reglas = {
+                y: ['ano', 'year', 'año', 'anio', 'periodo', 'ejercicio'],
+                d: ['descripcion', 'detalle', 'rubro', 'descripcióndelrubro', 'concepto', 'desc', 'item', 'nombre'],
+                p: ['preciousd', 'precio', 'preciousd', 'valor', 'costo', 'importe', 'precio', 'p'],
+                u: ['unidad', 'u', 'un', 'medida', 'unidadmedida'],
+                pr: ['proyecto', 'nombreproyecto', 'proyect', 'pr', 'obra', 'nombreproyecto'],
+                c: ['categoria', 'rubrocategoria', 'categoría', 'cat', 'c', 'grupo', 'tipo', 'clasificacion']
+            };
+
+            const nuevoMapping = { y: '', d: '', p: '', u: '', pr: '', c: '' };
+            const asignadas = new Set();
+
+            for (const [campo, patrones] of Object.entries(reglas)) {
+                for (const col of cols) {
+                    if (asignadas.has(col.original)) continue;
+                    if (patrones.includes(col.normalizado)) {
+                        nuevoMapping[campo] = col.original;
+                        asignadas.add(col.original);
+                        break;
+                    }
+                }
+            }
+
+            for (const [campo, patrones] of Object.entries(reglas)) {
+                if (nuevoMapping[campo]) continue;
+                for (const col of cols) {
+                    if (asignadas.has(col.original)) continue;
+                    if (patrones.some(p => col.normalizado.includes(p))) {
+                        nuevoMapping[campo] = col.original;
+                        asignadas.add(col.original);
+                        break;
+                    }
+                }
+            }
+
+            this.mapping = nuevoMapping;
+            this.actualizarRegistrosDesdeExcel();
+        },
+
+        // ==================== PROCESAMIENTO DE DATOS DESDE EXCEL ====================
+        actualizarRegistrosDesdeExcel() {
+            if (!this.datosCrudos.length) {
+                this.registrosDesdeExcel = [];
+                this.recalcularTodo();
+                return;
+            }
+
+            this.registrosDesdeExcel = this.datosCrudos
+                .map(row => this.mapearFila(row))
+                .filter(r => r.d !== '' && r.p !== null);
+
+            this.recalcularTodo();
+        },
+
+        mapearFila(row) {
+            const getVal = (campo) => {
+                const col = this.mapping[campo];
+                if (!col) return '';
+                const val = row[col];
+                return (val !== undefined && val !== null) ? String(val).trim() : '';
+            };
+
+            const y = getVal('y');
+            const d = getVal('d');
+            const u = getVal('u');
+            const pr = getVal('pr');
+            const c = getVal('c');
+
+            let p = null;
+            const rawP = this.mapping.p ? row[this.mapping.p] : undefined;
+            if (rawP !== undefined && rawP !== null && rawP !== '') {
+                p = this.parsePrecio(rawP);
+            }
+
+            return { y, d, p, u, pr, c };
+        },
+
+        parsePrecio(valor) {
+            if (typeof valor === 'number') return valor;
+            const text = String(valor || '').trim();
+            if (!text) return null;
+            
+            let cleaned = text.replace(/[^\d,.\-]/g, '');
+            const hasComma = cleaned.includes(',');
+            const hasDot = cleaned.includes('.');
+
+            if (hasComma && hasDot) {
+                if (cleaned.lastIndexOf(',') > cleaned.lastIndexOf('.')) {
+                    cleaned = cleaned.replace(/\./g, '').replace(',', '.');
+                } else {
+                    cleaned = cleaned.replace(/,/g, '');
+                }
+            } else if (hasComma) {
+                cleaned = cleaned.replace(',', '.');
+            }
+
+            const num = Number(cleaned);
+            return isNaN(num) ? null : num;
+        },
+
+        // ==================== LÓGICA DE FUSIÓN Y DEDUPLICACIÓN ====================
+        recalcularTodo() {
+            // Forzar reactividad
+            this.datosBase = this.datosBase;
+            this.registrosDesdeExcel = this.registrosDesdeExcel;
+        },
+
+        generarClaveUnica(r) {
+            const d = (r.d || '').toLowerCase().replace(/\s+/g, ' ').trim();
+            const pr = (r.pr || '').toLowerCase().replace(/\s+/g, ' ').trim();
+            return (r.y || '') + '|' + d + '|' + pr;
+        },
+
+        get datosCombinados() {
+            const setClaves = new Set();
+            const resultado = [];
+
+            for (const r of this.datosBase) {
+                const clave = this.generarClaveUnica(r);
+                setClaves.add(clave);
+                resultado.push({ ...r, _origen: 'base' });
+            }
+
+            for (const r of this.registrosDesdeExcel) {
+                const clave = this.generarClaveUnica(r);
+                if (!setClaves.has(clave)) {
+                    setClaves.add(clave);
+                    resultado.push({ ...r, _origen: 'excel' });
+                }
+            }
+
+            return resultado;
+        },
+
+        get duplicadosEncontrados() {
+            const setClaves = new Set();
+            let dupCount = 0;
+
+            for (const r of this.datosBase) {
+                setClaves.add(this.generarClaveUnica(r));
+            }
+            for (const r of this.registrosDesdeExcel) {
+                if (setClaves.has(this.generarClaveUnica(r))) {
+                    dupCount++;
+                } else {
+                    setClaves.add(this.generarClaveUnica(r));
+                }
+            }
+            return dupCount;
+        },
+
+        get nuevosAgregados() {
+            return this.registrosDesdeExcel.length - this.duplicadosEncontrados;
+        },
+
+        get totalCombinado() {
+            return this.datosCombinados.length;
+        },
+
+        // ==================== GETTERS ADICIONALES ====================
+        get totalRegistros() {
+            return this.datosCrudos.length;
+        },
+
+        get primerRegistroExcel() {
+            return this.registrosDesdeExcel.length > 0 ? this.registrosDesdeExcel[0] : null;
+        },
+
+        get puedeGenerar() {
+            return this.totalCombinado > 0;
+        },
+
+        get fechaGeneracion() {
+            return new Date().toLocaleDateString('es-EC', { year: 'numeric', month: 'long', day: 'numeric' });
+        },
+
+        get codigoPreview() {
+            const datos = this.datosCombinados;
+            const lineas = datos.slice(0, 5);
+            return lineas.map(r => {
+                const partes = [];
+                partes.push(`  y: "${this.escapeJS(r.y)}"`);
+                partes.push(`  d: "${this.escapeJS(r.d)}"`);
+                partes.push(`  p: ${r.p !== null ? r.p : 0}`);
+                partes.push(`  u: "${this.escapeJS(r.u)}"`);
+                partes.push(`  pr: "${this.escapeJS(r.pr)}"`);
+                partes.push(`  c: "${this.escapeJS(r.c)}"`);
+                return `  { ${partes.join(', ')} },`;
+            }).join('\n') + '\n  <span class="text-gray-500">// ... ' + (datos.length - 5) + ' registros más</span>';
+        },
+
+        // ==================== GENERACIÓN Y DESCARGA ====================
+        generarYDescargar() {
+            if (!this.puedeGenerar) {
+                alert('No hay datos para generar.');
+                return;
+            }
+
+            const contenido = this.generarCodigoJS();
+            const blob = new Blob([contenido], { type: 'text/javascript;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = 'preciosripconciv.js';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+        },
+
+        generarCodigoJS() {
+            const min = this.opciones.minificar;
+            const nl = min ? '' : '\n';
+            const tab = min ? '' : '    ';
+            const space = min ? '' : ' ';
+            const total = this.totalCombinado;
+            const datos = this.datosCombinados;
+
+            let code = `// preciosripconciv.js - Base de datos de rubros RIPCONCIV${nl}`;
+            code += `// Actualizado: ${this.fechaGeneracion}${nl}`;
+            code += `// Total registros: ${total}${nl}`;
+            if (this.datosBase.length > 0) {
+                code += `// Base anterior: ${this.datosBase.length} registros${nl}`;
+            }
+            if (this.registrosDesdeExcel.length > 0) {
+                code += `// Nuevos agregados: ${this.nuevosAgregados} registros`;
+                if (this.duplicadosEncontrados > 0) {
+                    code += ` (${this.duplicadosEncontrados} duplicados omitidos)`;
+                }
+                code += nl;
+                code += `// Fuente Excel: ${this.nombreArchivo}${nl}`;
+            }
+            code += `${nl}`;
+            code += `const RUBROS_DATA = [${nl}`;
+
+            const lineas = datos.map(r => {
+                const partes = [];
+                partes.push(`y:${space}"${this.escapeJS(r.y)}"`);
+                partes.push(`d:${space}"${this.escapeJS(r.d)}"`);
+                partes.push(`p:${space}${r.p !== null ? r.p : 0}`);
+                partes.push(`u:${space}"${this.escapeJS(r.u)}"`);
+                partes.push(`pr:${space}"${this.escapeJS(r.pr)}"`);
+                partes.push(`c:${space}"${this.escapeJS(r.c)}"`);
+                return `${tab}{ ${partes.join(`,${space}`)} }`;
+            });
+
+            code += lineas.join(`,${nl}`) + `${nl}`;
+            code += `];${nl}`;
+            code += `${nl}`;
+            code += `// Fin del archivo - ${total} registros${nl}`;
+
+            return code;
+        },
+
+        copiarCodigo() {
+            if (!this.puedeGenerar) return;
+            const codigo = this.generarCodigoJS();
+            navigator.clipboard.writeText(codigo).then(() => {
+                const btn = event.target.closest('button');
+                if (btn) {
+                    const original = btn.innerHTML;
+                    btn.innerHTML = '<i class="fas fa-check mr-1"></i>Copiado';
+                    setTimeout(() => btn.innerHTML = original, 2000);
+                }
+            }).catch(() => {
+                alert('No se pudo copiar al portapapeles. Usa "Descargar" para obtener el archivo.');
+            });
+        },
+
+        // ==================== UTILIDADES ====================
+        escapeJS(str) {
+            if (!str) return '';
+            return str
+                .replace(/\\/g, '\\\\')
+                .replace(/"/g, '\\"')
+                .replace(/\n/g, '\\n')
+                .replace(/\r/g, '\\r')
+                .replace(/\t/g, '\\t');
+        }
+    };
+}
+</script>
+</body>
+</html>
