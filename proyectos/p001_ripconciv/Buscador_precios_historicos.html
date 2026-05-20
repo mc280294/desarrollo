@@ -1,0 +1,1292 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Buscador de Rubros Históricos v2 - RIPCONCIV</title>
+    <!-- Play CDN: primero el script, luego tailwind.config (si no, darkMode: 'class' no aplica). -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class'
+        };
+    </script>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.13.3/dist/cdn.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        [x-cloak] { display: none !important; }
+        select option { padding: 8px; }
+        .scrollbar-thin::-webkit-scrollbar { width: 6px; }
+        .scrollbar-thin::-webkit-scrollbar-track { background: transparent; }
+        .scrollbar-thin::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+        .dark .scrollbar-thin::-webkit-scrollbar-thumb { background: #475569; }
+        
+        .categoria-truncate {
+            display: block;
+            width: 100%;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        
+        .pin-checkbox {
+            appearance: none;
+            -webkit-appearance: none;
+            width: 18px;
+            height: 18px;
+            border: 2px solid #6b7280;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.2s;
+            position: relative;
+        }
+        .pin-checkbox:checked {
+            background-color: #f59e0b;
+            border-color: #f59e0b;
+        }
+        .pin-checkbox:checked::after {
+            content: '📌';
+            position: absolute;
+            top: -2px;
+            left: 0px;
+            font-size: 14px;
+        }
+        .pin-checkbox:hover {
+            border-color: #f59e0b;
+            box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.2);
+        }
+        
+        .pinned-row {
+            background-color: rgba(245, 158, 11, 0.05);
+            border-left: 3px solid #f59e0b;
+        }
+        .dark .pinned-row {
+            background-color: rgba(245, 158, 11, 0.1);
+        }
+
+        .brand-ripconciv {
+            font-size: 1.8rem;
+            font-weight: 900;
+            letter-spacing: 0.1em;
+            background: linear-gradient(135deg, #3b82f6, #1d4ed8, #2563eb);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            text-transform: uppercase;
+            line-height: 1;
+        }
+        .dark .brand-ripconciv {
+            background: linear-gradient(135deg, #60a5fa, #3b82f6, #818cf8);
+            -webkit-background-clip: text;
+            background-clip: text;
+        }
+        .brand-divider {
+            width: 1px;
+            height: 2.5rem;
+            background: linear-gradient(to bottom, transparent, #cbd5e1, transparent);
+        }
+        .dark .brand-divider {
+            background: linear-gradient(to bottom, transparent, #475569, transparent);
+        }
+    </style>
+    <script>
+        (function () {
+            try {
+                const savedMode = localStorage.getItem('ripconciv_theme_mode') || 'auto';
+                const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+                const useDark = savedMode === 'dark' || (savedMode === 'auto' && prefersDark);
+                document.documentElement.classList.toggle('dark', useDark);
+            } catch (error) {
+                // Si localStorage falla por permisos, se mantiene tema claro por defecto.
+            }
+        })();
+    </script>
+    <script src="preciosripconciv.js"></script>
+</head>
+<body class="bg-gray-50 text-gray-800 dark:bg-gray-900 dark:text-gray-100 min-h-screen transition-colors duration-300">
+
+    <div x-data="appData()" x-init="initApp()" class="p-4 md:p-8 max-w-[1800px] mx-auto">
+        
+        <header class="mb-8">
+            <div class="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
+                <div>
+                    <h1 class="text-2xl md:text-3xl font-bold text-gray-800 dark:text-gray-100">Buscador de Rubros Históricos</h1>
+                    <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">Consulta técnica consolidada (2021–2026)</p>
+                </div>
+                
+                <div class="flex items-center gap-4">
+                    <button @click="cycleTheme()"
+                            class="px-3 py-2 rounded-md text-sm font-medium border border-gray-300 dark:border-gray-600 bg-white hover:bg-gray-100 dark:bg-gray-800 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 transition flex items-center gap-2 shadow-sm"
+                            :title="'Tema actual: ' + themeLabel">
+                        <i class="fas" :class="themeIcon"></i>
+                        <span x-text="themeLabel"></span>
+                    </button>
+                    <div class="brand-divider hidden md:block"></div>
+                    <div class="flex flex-col items-end">
+                        <span class="brand-ripconciv">RIPCONCIV</span>
+                    </div>
+                    <div class="hidden md:block brand-divider"></div>
+                        <div class="flex flex-col items-end gap-1">
+                            <span class="text-xs font-mono bg-blue-100 text-blue-800 px-2 py-1 rounded dark:bg-blue-900 dark:text-blue-200">
+                                <span x-show="!loading && !waitingForFile && rubros.length > 0" x-text="rubros.length + ' registros'"></span>
+                                <span x-show="loading">Cargando...</span>
+                            </span>
+                            <span x-show="!loading && fuenteDatos" class="text-[10px] font-mono text-gray-400 dark:text-gray-500 uppercase tracking-wider" x-text="'Fuente: ' + fuenteDatos"></span>
+                            <span x-show="rubrosFijados.size > 0" class="text-xs font-mono bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200 px-2 py-1 rounded mt-1">
+                                <i class="fas fa-thumbtack mr-1"></i><span x-text="rubrosFijados.size + ' fijados'"></span>
+                            </span>
+                        </div>
+                </div>
+            </div>
+        </header>
+
+        <div x-show="loading && !waitingForFile" class="flex flex-col items-center justify-center py-20 bg-white dark:bg-gray-800 rounded-lg shadow">
+            <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mb-4"></div>
+            <p class="text-lg font-medium">Intentando cargar base de datos...</p>
+            <p class="text-sm text-gray-400 mt-2">Verificando 'preciosripconciv.csv'</p>
+        </div>
+
+        <div x-show="waitingForFile" x-transition class="flex flex-col items-center justify-center py-12 bg-white dark:bg-gray-800 rounded-lg shadow border border-blue-200 dark:border-blue-800">
+            <div class="bg-blue-50 dark:bg-blue-900/20 p-6 rounded-lg text-center max-w-lg mb-6">
+                <i class="fas fa-database text-4xl text-blue-500 mb-4"></i>
+                <h2 class="text-xl font-bold mb-2">Base de Datos No Encontrada</h2>
+                <p class="text-sm text-gray-600 dark:text-gray-300 mb-4">No se pudo cargar automáticamente el archivo <strong>preciosripconciv.csv</strong>. Por favor, seleccione el archivo manualmente desde su equipo.</p>
+            </div>
+            <label class="cursor-pointer bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg shadow transition transform hover:scale-105 flex items-center gap-3">
+                <i class="fas fa-folder-open"></i>
+                <span>Seleccionar archivo .csv</span>
+                <input type="file" @change="handleFileSelect($event)" accept=".csv,text/csv" class="hidden">
+            </label>
+            <p class="text-xs text-gray-400 mt-4">El archivo debe incluir cabeceras como Año, Descripción, Precio, Unidad, Proyecto y Categoría.</p>
+            <button @click="reintentarCarga()" class="mt-4 text-sm text-blue-600 hover:underline">
+                <i class="fas fa-redo mr-1"></i>Reintentar carga automática
+            </button>
+        </div>
+
+        <template x-if="!loading && !waitingForFile && rubros.length > 0">
+            <div>
+                <div class="bg-white dark:bg-gray-800 p-4 rounded-lg shadow mb-6 flex flex-wrap gap-4 justify-between items-center border border-gray-100 dark:border-gray-700">
+                    <div class="flex gap-4 text-sm flex-wrap items-center">
+                        <span class="font-semibold text-gray-600 dark:text-gray-300">
+                            <i class="fas fa-filter mr-2 text-blue-500"></i>
+                            Resultados: <span class="text-blue-600 dark:text-blue-400" x-text="filteredResults.length"></span>
+                        </span>
+                        <span x-show="hasActiveFilters" class="text-xs text-orange-600 bg-orange-100 dark:bg-orange-900/30 px-2 py-1 rounded animate-pulse">
+                            <i class="fas fa-bell mr-1"></i>Filtros activos
+                        </span>
+                    </div>
+                    <div class="flex gap-2 items-center">
+                        <div class="relative" @click.away="exportDropdownOpen = false">
+                            <button @click="exportDropdownOpen = !exportDropdownOpen" 
+                                    class="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-md text-sm font-medium transition shadow-sm flex items-center gap-2">
+                                <i class="fas fa-file-csv"></i>
+                                <span>Exportar</span>
+                                <i class="fas fa-chevron-down text-xs"></i>
+                            </button>
+                            
+                            <div x-show="exportDropdownOpen" 
+                                 x-transition:enter="transition ease-out duration-200"
+                                 x-transition:enter-start="opacity-0 -translate-y-2"
+                                 x-transition:enter-end="opacity-100 translate-y-0"
+                                 class="absolute right-0 top-full mt-1 w-56 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg shadow-xl z-50">
+                                
+                                <div class="p-1">
+                                    <button @click="exportFiltrados(); exportDropdownOpen = false" 
+                                            class="w-full flex items-center gap-3 px-3 py-2 rounded hover:bg-blue-50 dark:hover:bg-gray-700 text-left text-sm transition">
+                                        <div class="w-8 h-8 bg-blue-100 dark:bg-blue-900/40 rounded flex items-center justify-center">
+                                            <i class="fas fa-filter text-blue-600 dark:text-blue-400 text-xs"></i>
+                                        </div>
+                                        <div>
+                                            <div class="font-medium text-gray-800 dark:text-gray-200">Filtrados</div>
+                                            <div class="text-xs text-gray-500"><span x-text="filteredResults.length"></span> registros</div>
+                                        </div>
+                                    </button>
+                                    
+                                    <button @click="exportFijados(); exportDropdownOpen = false" 
+                                            class="w-full flex items-center gap-3 px-3 py-2 rounded hover:bg-yellow-50 dark:hover:bg-gray-700 text-left text-sm transition mt-1">
+                                        <div class="w-8 h-8 bg-yellow-100 dark:bg-yellow-900/40 rounded flex items-center justify-center">
+                                            <i class="fas fa-thumbtack text-yellow-600 dark:text-yellow-400 text-xs"></i>
+                                        </div>
+                                        <div>
+                                            <div class="font-medium text-gray-800 dark:text-gray-200">Fijados</div>
+                                            <div class="text-xs text-gray-500"><span x-text="rubrosFijados.size"></span> registros</div>
+                                        </div>
+                                    </button>
+                                </div>
+                                
+                                <div class="border-t border-gray-100 dark:border-gray-700 p-1">
+                                    <button @click="exportarAmbos(); exportDropdownOpen = false" 
+                                            class="w-full flex items-center gap-3 px-3 py-2 rounded hover:bg-gray-50 dark:hover:bg-gray-700 text-left text-sm transition">
+                                        <div class="w-8 h-8 bg-purple-100 dark:bg-purple-900/40 rounded flex items-center justify-center">
+                                            <i class="fas fa-layer-group text-purple-600 dark:text-purple-400 text-xs"></i>
+                                        </div>
+                                        <div>
+                                            <div class="font-medium text-gray-800 dark:text-gray-200">Ambos (Filtrados + Fijados)</div>
+                                            <div class="text-xs text-gray-500">Combinados en un archivo</div>
+                                        </div>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <button @click="resetFilters()" class="px-4 py-2 bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 rounded-md text-sm font-medium transition shadow-sm">
+                            <i class="fas fa-undo mr-2"></i>Limpiar Todo
+                        </button>
+                    </div>
+                </div>
+
+                <div class="bg-white dark:bg-gray-800 p-5 rounded-lg shadow mb-4 border border-gray-100 dark:border-gray-700">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div class="relative">
+                            <label class="block text-xs font-medium text-gray-500 mb-1 ml-1">
+                                <i class="fas fa-tag mr-1 text-blue-400"></i>Buscar Rubro / Descripción
+                                <span class="text-blue-500 cursor-help" title="Use * como separador. Ej: 320*hormi encuentra textos que tengan '320' y 'hormi' en cualquier orden.">
+                                    <i class="fas fa-info-circle"></i>
+                                </span>
+                            </label>
+                            <div class="relative">
+                                <i class="fas fa-search absolute left-3 top-3 text-gray-400"></i>
+                                <input type="text" 
+                                       x-model.debounce.300ms="busquedaDescripcion" 
+                                       placeholder="Ej: 320*hormi o acero fy" 
+                                       class="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white outline-none transition font-mono text-sm">
+                                <div x-show="busquedaDescripcion.includes('*')" class="absolute right-3 top-2.5 text-xs text-blue-500 bg-blue-50 dark:bg-blue-900/30 px-2 py-0.5 rounded">
+                                    <i class="fas fa-star"></i> Multi-búsqueda
+                                </div>
+                            </div>
+                            <p class="text-xs text-gray-400 mt-1 ml-1">
+                                <span x-show="busquedaDescripcion && !busquedaDescripcion.includes('*')">Búsqueda por palabras (todas deben coincidir)</span>
+                                <span x-show="busquedaDescripcion && busquedaDescripcion.includes('*')">Separador *: <code x-text="'\"' + busquedaDescripcion.replace(/\*/g, ' y ') + '\"'"></code></span>
+                            </p>
+                        </div>
+
+                        <div class="relative">
+                            <label class="block text-xs font-medium text-gray-500 mb-1 ml-1">
+                                <i class="fas fa-building mr-1 text-purple-400"></i>Buscar por Nombre de Proyecto (texto libre)
+                                <span class="text-blue-500 cursor-help" title="Use * como separador. Ej: PROMART*TERMINAL encuentra proyectos con ambas palabras.">
+                                    <i class="fas fa-info-circle"></i>
+                                </span>
+                            </label>
+                            <div class="relative">
+                                <i class="fas fa-building absolute left-3 top-3 text-purple-400"></i>
+                                <input type="text" 
+                                       x-model.debounce.300ms="busquedaProyecto" 
+                                       placeholder="Ej: PROMART*TERMINAL" 
+                                       class="w-full pl-10 pr-4 py-2 border border-purple-300 dark:border-purple-600 rounded-md focus:ring-2 focus:ring-purple-500 dark:bg-gray-700 dark:text-white outline-none transition font-mono text-sm">
+                                <div x-show="busquedaProyecto.includes('*')" class="absolute right-3 top-2.5 text-xs text-purple-500 bg-purple-50 dark:bg-purple-900/30 px-2 py-0.5 rounded">
+                                    <i class="fas fa-star"></i> Multi-búsqueda
+                                </div>
+                            </div>
+                            <p class="text-xs text-gray-400 mt-1 ml-1">
+                                <span x-show="busquedaProyecto && !busquedaProyecto.includes('*')">Búsqueda por palabras</span>
+                                <span x-show="busquedaProyecto && busquedaProyecto.includes('*')">Separador *: <code x-text="'\"' + busquedaProyecto.replace(/\*/g, ' y ') + '\"'"></code></span>
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-white dark:bg-gray-800 p-4 rounded-lg shadow mb-6 border border-gray-100 dark:border-gray-700">
+                    <div class="flex flex-wrap items-end gap-3">
+                        <!-- Filtro Año (Multi-Select) -->
+                        <div class="w-32 relative" @click.away="anioDropdownOpen = false">
+                            <label class="block text-xs font-medium text-gray-500 mb-1 ml-1"><i class="far fa-calendar-alt mr-1 text-purple-400"></i>Año</label>
+                            <div class="w-full h-[34px] border border-purple-300 dark:border-purple-600 rounded-md dark:bg-gray-700 focus-within:ring-2 focus-within:ring-purple-500 outline-none transition flex items-center justify-between px-2.5 gap-1">
+                                <div class="flex-1 min-w-0 flex items-center gap-1.5 cursor-pointer py-1" @click="anioDropdownOpen = !anioDropdownOpen">
+                                    <template x-if="aniosSeleccionados.length === 0">
+                                        <span class="text-gray-400 text-xs">Todos</span>
+                                    </template>
+                                    <template x-if="aniosSeleccionados.length > 0">
+                                        <span class="text-purple-400 dark:text-purple-300 font-semibold text-xs truncate" x-text="aniosSeleccionados.length + ' sel.'"></span>
+                                    </template>
+                                </div>
+                                <div class="flex items-center gap-1 shrink-0">
+                                    <button type="button" x-show="aniosSeleccionados.length > 0" @click.stop.prevent="limpiarSeleccion('aniosSeleccionados')" class="text-purple-400 hover:text-purple-200"><i class="fas fa-times text-[10px]"></i></button>
+                                    <i class="fas fa-chevron-down text-[10px] text-gray-400 transition-transform" :class="{'rotate-180': anioDropdownOpen}" @click="anioDropdownOpen = !anioDropdownOpen"></i>
+                                </div>
+                            </div>
+                            <div x-show="anioDropdownOpen" x-transition class="absolute top-full left-0 z-50 w-48 mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg shadow-xl max-h-[300px] flex flex-col overflow-hidden">
+                                <div class="p-2 border-b border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/80 flex gap-2">
+                                    <input type="text" x-model="anioBusquedaInterna" placeholder="Buscar..." @click.stop class="flex-1 px-2 py-1 text-xs border border-gray-300 dark:border-gray-600 rounded dark:bg-gray-700 dark:text-white outline-none">
+                                    <button @click.stop="seleccionarTodos('y', 'aniosSeleccionados')" class="text-[10px] bg-purple-100 dark:bg-purple-900/40 text-purple-700 px-1.5 rounded">All</button>
+                                </div>
+                                <div class="overflow-y-auto scrollbar-thin flex-1 p-1">
+                                    <template x-for="a in itemsFiltradosAnio" :key="a">
+                                        <label class="flex items-center gap-2 px-2 py-1 hover:bg-purple-50 dark:hover:bg-purple-900/20 rounded cursor-pointer transition text-xs">
+                                            <input type="checkbox" :checked="aniosSeleccionados.includes(String(a))" @change="toggleSeleccion('aniosSeleccionados', String(a))" class="w-3 h-3 text-purple-600 rounded">
+                                            <span class="text-gray-700 dark:text-gray-300" x-text="a"></span>
+                                        </label>
+                                    </template>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Filtro Unidad (Multi-Select) -->
+                        <div class="w-32 relative" @click.away="unidadDropdownOpen = false">
+                            <label class="block text-xs font-medium text-gray-500 mb-1 ml-1"><i class="fas fa-balance-scale mr-1 text-purple-400"></i>Unidad</label>
+                            <div class="w-full h-[34px] border border-purple-300 dark:border-purple-600 rounded-md dark:bg-gray-700 focus-within:ring-2 focus-within:ring-purple-500 outline-none transition flex items-center justify-between px-2.5 gap-1">
+                                <div class="flex-1 min-w-0 flex items-center gap-1.5 cursor-pointer py-1" @click="unidadDropdownOpen = !unidadDropdownOpen">
+                                    <template x-if="unidadesSeleccionadas.length === 0">
+                                        <span class="text-gray-400 text-xs">Todas</span>
+                                    </template>
+                                    <template x-if="unidadesSeleccionadas.length > 0">
+                                        <span class="text-purple-400 dark:text-purple-300 font-semibold text-xs truncate" x-text="unidadesSeleccionadas.length + ' sel.'"></span>
+                                    </template>
+                                </div>
+                                <div class="flex items-center gap-1 shrink-0">
+                                    <button type="button" x-show="unidadesSeleccionadas.length > 0" @click.stop.prevent="limpiarSeleccion('unidadesSeleccionadas')" class="text-purple-400 hover:text-purple-200"><i class="fas fa-times text-[10px]"></i></button>
+                                    <i class="fas fa-chevron-down text-[10px] text-gray-400 transition-transform" :class="{'rotate-180': unidadDropdownOpen}" @click="unidadDropdownOpen = !unidadDropdownOpen"></i>
+                                </div>
+                            </div>
+                            <div x-show="unidadDropdownOpen" x-transition class="absolute top-full left-0 z-50 w-48 mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg shadow-xl max-h-[300px] flex flex-col overflow-hidden">
+                                <div class="p-2 border-b border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/80 flex gap-2">
+                                    <input type="text" x-model="unidadBusquedaInterna" placeholder="Buscar..." @click.stop class="flex-1 px-2 py-1 text-xs border border-gray-300 dark:border-gray-600 rounded dark:bg-gray-700 dark:text-white outline-none">
+                                    <button @click.stop="seleccionarTodos('u', 'unidadesSeleccionadas')" class="text-[10px] bg-purple-100 dark:bg-purple-900/40 text-purple-700 px-1.5 rounded">All</button>
+                                </div>
+                                <div class="overflow-y-auto scrollbar-thin flex-1 p-1">
+                                    <template x-for="u in itemsFiltradosUni" :key="u">
+                                        <label class="flex items-center gap-2 px-2 py-1 hover:bg-purple-50 dark:hover:bg-purple-900/20 rounded cursor-pointer transition text-xs">
+                                            <input type="checkbox" :checked="unidadesSeleccionadas.includes(String(u))" @change="toggleSeleccion('unidadesSeleccionadas', String(u))" class="w-3 h-3 text-purple-600 rounded">
+                                            <span class="text-gray-700 dark:text-gray-300" x-text="u"></span>
+                                        </label>
+                                    </template>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Filtro Categoría (Multi-Select) -->
+                        <div class="flex-1 min-w-[200px] relative" @click.away="categoriaDropdownOpen = false">
+                            <label class="block text-xs font-medium text-gray-500 mb-1 ml-1"><i class="fas fa-tags mr-1 text-purple-400"></i>Categoría</label>
+                            <div class="w-full h-[34px] border border-purple-300 dark:border-purple-600 rounded-md dark:bg-gray-700 focus-within:ring-2 focus-within:ring-purple-500 outline-none transition flex items-center justify-between px-2.5 gap-1">
+                                <div class="flex-1 min-w-0 flex items-center gap-1.5 cursor-pointer py-1" @click="categoriaDropdownOpen = !categoriaDropdownOpen">
+                                    <template x-if="categoriasSeleccionadas.length === 0">
+                                        <span class="text-gray-400 text-xs">Todas las categorías</span>
+                                    </template>
+                                    <template x-if="categoriasSeleccionadas.length > 0">
+                                        <div class="flex items-center gap-1.5 min-w-0">
+                                            <i class="fas fa-check-circle text-purple-500 text-xs shrink-0"></i>
+                                            <span class="text-purple-400 dark:text-purple-300 font-semibold text-xs truncate" x-text="categoriasSeleccionadas.length + ' seleccionadas'"></span>
+                                        </div>
+                                    </template>
+                                </div>
+                                <div class="flex items-center gap-1 shrink-0">
+                                    <button type="button" x-show="categoriasSeleccionadas.length > 0" @click.stop.prevent="limpiarSeleccion('categoriasSeleccionadas')" class="text-purple-400 hover:text-purple-200"><i class="fas fa-times text-[10px]"></i></button>
+                                    <i class="fas fa-chevron-down text-[10px] text-gray-400 transition-transform" :class="{'rotate-180': categoriaDropdownOpen}" @click="categoriaDropdownOpen = !categoriaDropdownOpen"></i>
+                                </div>
+                            </div>
+                            <div x-show="categoriaDropdownOpen" x-transition class="absolute top-full left-0 z-50 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg shadow-xl max-h-[350px] flex flex-col overflow-hidden">
+                                <div class="p-2 border-b border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/80 flex gap-2">
+                                    <div class="relative flex-1">
+                                        <i class="fas fa-search absolute left-2 top-2.5 text-gray-400 text-[10px]"></i>
+                                        <input type="text" x-model="categoriaBusquedaInterna" placeholder="Filtrar categorías..." @click.stop class="w-full pl-6 pr-2 py-1.5 text-xs border border-gray-300 dark:border-gray-600 rounded dark:bg-gray-700 dark:text-white outline-none">
+                                    </div>
+                                    <button @click.stop="seleccionarTodos('c', 'categoriasSeleccionadas')" class="text-xs bg-purple-100 dark:bg-purple-900/40 text-purple-700 px-2 rounded font-medium">Todos</button>
+                                </div>
+                                <div class="overflow-y-auto scrollbar-thin flex-1 p-1">
+                                    <template x-for="c in itemsFiltradosCat" :key="c">
+                                        <label class="flex items-center gap-2 px-3 py-1.5 hover:bg-purple-50 dark:hover:bg-purple-900/20 rounded cursor-pointer transition text-xs">
+                                            <input type="checkbox" :checked="categoriasSeleccionadas.includes(String(c))" @change="toggleSeleccion('categoriasSeleccionadas', String(c))" class="w-3.5 h-3.5 text-purple-600 rounded border-gray-300">
+                                            <span class="text-gray-700 dark:text-gray-300 truncate" x-text="c"></span>
+                                        </label>
+                                    </template>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Filtro Proyecto (Multi-Select) -->
+                        <div class="flex-1 min-w-[200px] relative" @click.away="proyectoDropdownOpen = false">
+                            <label class="block text-xs font-medium text-gray-500 mb-1 ml-1"><i class="fas fa-building mr-1 text-purple-400"></i>Proyectos</label>
+                            <div class="w-full h-[34px] border border-purple-300 dark:border-purple-600 rounded-md dark:bg-gray-700 focus-within:ring-2 focus-within:ring-purple-500 outline-none transition flex items-center justify-between px-2.5 gap-1">
+                                <div class="flex-1 min-w-0 flex items-center gap-1.5 cursor-pointer py-1" @click="proyectoDropdownOpen = !proyectoDropdownOpen">
+                                    <template x-if="proyectosSeleccionados.length === 0">
+                                        <span class="text-gray-400 text-xs">Todos los proyectos</span>
+                                    </template>
+                                    <template x-if="proyectosSeleccionados.length > 0">
+                                        <div class="flex items-center gap-1.5 min-w-0">
+                                            <i class="fas fa-check-circle text-purple-500 text-xs shrink-0"></i>
+                                            <span class="text-purple-400 dark:text-purple-300 font-semibold text-xs truncate" x-text="proyectosSeleccionados.length + ' seleccionados'"></span>
+                                        </div>
+                                    </template>
+                                </div>
+                                <div class="flex items-center gap-1 shrink-0">
+                                    <button type="button" x-show="proyectosSeleccionados.length > 0" @click.stop.prevent="limpiarSeleccion('proyectosSeleccionados')" class="text-purple-400 hover:text-purple-200"><i class="fas fa-times text-[10px]"></i></button>
+                                    <i class="fas fa-chevron-down text-[10px] text-gray-400 transition-transform" :class="{'rotate-180': proyectoDropdownOpen}" @click="proyectoDropdownOpen = !proyectoDropdownOpen"></i>
+                                </div>
+                            </div>
+                            <div x-show="proyectoDropdownOpen" x-transition class="absolute top-full left-0 z-50 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg shadow-xl max-h-[350px] flex flex-col overflow-hidden">
+                                <div class="p-2 border-b border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/80 flex gap-2">
+                                    <div class="relative flex-1">
+                                        <i class="fas fa-search absolute left-2 top-2.5 text-gray-400 text-[10px]"></i>
+                                        <input type="text" x-model="proyectoBusquedaInterna" placeholder="Filtrar proyectos..." @click.stop class="w-full pl-6 pr-2 py-1.5 text-xs border border-gray-300 dark:border-gray-600 rounded dark:bg-gray-700 dark:text-white outline-none">
+                                    </div>
+                                    <button @click.stop="seleccionarTodos('pr', 'proyectosSeleccionados')" class="text-xs bg-purple-100 dark:bg-purple-900/40 text-purple-700 px-2 rounded font-medium">Todos</button>
+                                </div>
+                                <div class="overflow-y-auto scrollbar-thin flex-1 p-1">
+                                    <template x-for="p in itemsFiltradosProy" :key="p">
+                                        <label class="flex items-center gap-2 px-3 py-1.5 hover:bg-purple-50 dark:hover:bg-purple-900/20 rounded cursor-pointer transition text-xs">
+                                            <input type="checkbox" :checked="proyectosSeleccionados.includes(String(p))" @change="toggleSeleccion('proyectosSeleccionados', String(p))" class="w-3.5 h-3.5 text-purple-600 rounded border-gray-300">
+                                            <span class="text-gray-700 dark:text-gray-300 truncate" x-text="p"></span>
+                                        </label>
+                                    </template>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div x-show="rubrosFijados.size > 0" class="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-3 mb-4 flex items-center justify-between">
+                    <div class="flex items-center gap-3">
+                        <i class="fas fa-thumbtack text-yellow-600 dark:text-yellow-400"></i>
+                        <span class="text-sm text-yellow-800 dark:text-yellow-200">
+                            <strong x-text="rubrosFijados.size"></strong> rubro(s) fijado(s)
+                        </span>
+                    </div>
+                    <div class="flex items-center gap-4">
+                        <label class="flex items-center gap-2 text-sm text-yellow-700 dark:text-yellow-300 cursor-pointer">
+                            <input type="checkbox" x-model="mostrarSoloFijados" class="w-4 h-4 text-yellow-600 rounded border-yellow-400 focus:ring-yellow-500">
+                            <span>Mostrar solo fijados</span>
+                        </label>
+                        <button @click="desfijarTodos()" class="text-xs text-yellow-600 dark:text-yellow-400 hover:text-yellow-800 dark:hover:text-yellow-200 underline">
+                            <i class="fas fa-times mr-1"></i>Desfijar todos
+                        </button>
+                    </div>
+                </div>
+
+                <div class="overflow-hidden rounded-lg shadow border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-sm text-left">
+                            <thead class="text-xs font-bold uppercase bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-200 border-b dark:border-gray-600">
+                                <tr>
+                                    <th class="px-3 py-3 w-12 text-center" title="Fijar rubro para exportación">
+                                        <span title="Fijar rubro">📌</span>
+                                    </th>
+                                    <th class="px-3 py-3 cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-600 transition select-none w-16" @click="ordenarPor('y')">
+                                        Año <span x-show="orden === 'y'" class="ml-1">⇅</span>
+                                    </th>
+                                    <th class="px-5 py-3 cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-600 transition select-none w-[48%]" @click="ordenarPor('d')">
+                                        Descripción <span x-show="orden === 'd'" class="ml-1">⇅</span>
+                                    </th>
+                                    <th class="px-4 py-3 cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-600 transition select-none text-right w-28" @click="ordenarPor('p')">
+                                        Precio <span x-show="orden === 'p'" class="ml-1">⇅</span>
+                                    </th>
+                                    <th class="px-3 py-3 text-center w-16">U.</th>
+                                    <th class="px-5 py-3 hidden lg:table-cell">Proyecto</th>
+                                    <th class="px-4 py-3 hidden md:table-cell w-[14%]">Categoría</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-gray-100 dark:divide-gray-700">
+                                <template x-for="(item, index) in paginatedRubros" :key="item._uid">
+                                    <tr :class="{'pinned-row': rubrosFijados.has(item._uid)}" class="hover:bg-blue-50 dark:hover:bg-gray-700/50 transition-colors duration-150">
+                                        <td class="px-3 py-3 text-center">
+                                            <input type="checkbox" 
+                                                   :checked="rubrosFijados.has(item._uid)"
+                                                   @change="toggleFijar(item)"
+                                                   class="pin-checkbox"
+                                                   :title="rubrosFijados.has(item._uid) ? 'Desfijar rubro' : 'Fijar rubro'">
+                                        </td>
+                                        <td class="px-3 py-3 font-mono text-gray-500 text-xs" x-text="item.y"></td>
+                                        <td class="px-5 py-3 font-medium text-gray-800 dark:text-gray-200 text-sm">
+                                            <span x-html="resaltarCoincidenciasDescripcion(item.d)"></span>
+                                            <span x-show="rubrosFijados.has(item._uid)" class="ml-2 text-yellow-500 text-xs" title="Fijado">
+                                                <i class="fas fa-thumbtack"></i>
+                                            </span>
+                                        </td>
+                                        <td class="px-4 py-3 font-bold text-green-700 dark:text-green-400 text-right text-sm" x-text="formatearMoneda(item.p)"></td>
+                                        <td class="px-3 py-3 text-center text-gray-500 text-xs font-bold" x-text="item.u"></td>
+                                        <td class="px-5 py-3 hidden lg:table-cell text-xs truncate max-w-[300px]" :title="item.pr">
+                                            <span class="text-purple-600 dark:text-purple-400 font-medium" x-html="resaltarCoincidenciasProyecto(item.pr)"></span>
+                                        </td>
+                                        <td class="px-4 py-3 hidden md:table-cell">
+                                            <span class="categoria-truncate text-xs text-gray-500 dark:text-gray-400" :title="item.c" x-text="item.c"></span>
+                                        </td>
+                                    </tr>
+                                </template>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div x-show="filteredRubros.length === 0 && hasActiveFilters" class="p-12 text-center">
+                        <i class="fas fa-search text-4xl text-gray-300 mb-4"></i>
+                        <p class="text-gray-500">No se encontraron rubros con los filtros actuales.</p>
+                        <button @click="resetFilters()" class="mt-4 text-blue-600 hover:underline font-medium">Limpiar filtros</button>
+                    </div>
+                </div>
+
+                <div class="flex flex-col md:flex-row justify-between items-center mt-6 gap-4" x-show="totalPaginas > 1">
+                    <div class="text-sm text-gray-500">
+                        Mostrando <span x-text="paginatedRubros.length"></span> de <span x-text="filteredRubros.length"></span> registros
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <button @click="paginaActual = 1" :disabled="paginaActual === 1" 
+                                class="px-3 py-1 rounded border hover:bg-gray-100 dark:border-gray-600 dark:hover:bg-gray-700 disabled:opacity-30 disabled:cursor-not-allowed transition">
+                            <i class="fas fa-angle-double-left"></i>
+                        </button>
+                        <button @click="paginaActual--" :disabled="paginaActual === 1" 
+                                class="px-3 py-1 rounded border hover:bg-gray-100 dark:border-gray-600 dark:hover:bg-gray-700 disabled:opacity-30 disabled:cursor-not-allowed transition">
+                            <i class="fas fa-angle-left"></i>
+                        </button>
+                        <span class="px-4 py-1 bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded border border-blue-200 dark:border-blue-800 text-sm font-bold">
+                            <span x-text="paginaActual"></span> / <span x-text="totalPaginas"></span>
+                        </span>
+                        <button @click="paginaActual++" :disabled="paginaActual === totalPaginas" 
+                                class="px-3 py-1 rounded border hover:bg-gray-100 dark:border-gray-600 dark:hover:bg-gray-700 disabled:opacity-30 disabled:cursor-not-allowed transition">
+                            <i class="fas fa-angle-right"></i>
+                        </button>
+                        <button @click="paginaActual = totalPaginas" :disabled="paginaActual === totalPaginas" 
+                                class="px-3 py-1 rounded border hover:bg-gray-100 dark:border-gray-600 dark:hover:bg-gray-700 disabled:opacity-30 disabled:cursor-not-allowed transition">
+                            <i class="fas fa-angle-double-right"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </template>
+
+    </div>
+
+    <div class="fixed bottom-4 right-4 text-xs italic text-gray-400 dark:text-gray-500 select-none pointer-events-none z-50">
+        desarrollado por Michael Cevallos
+    </div>
+
+    <script>
+        function appData() {
+            return {
+                rubros: [],
+                loading: true,
+                waitingForFile: false,
+                fuenteDatos: '',
+                
+                busquedaDescripcion: '',
+                busquedaProyecto: '',
+                
+                // Selección Múltiple (Nueva lógica tipo Proyectos)
+                aniosSeleccionados: [],
+                categoriasSeleccionadas: [],
+                unidadesSeleccionadas: [],
+                proyectosSeleccionados: [],
+                
+                // Estados de Dropdowns
+                anioDropdownOpen: false,
+                categoriaDropdownOpen: false,
+                unidadDropdownOpen: false,
+                proyectoDropdownOpen: false,
+                
+                // Buscadores internos de Dropdowns
+                anioBusquedaInterna: '',
+                categoriaBusquedaInterna: '',
+                unidadBusquedaInterna: '',
+                proyectoBusquedaInterna: '',
+                
+                // Optimizaciones de búsqueda
+                busquedaPartesD: [],
+                busquedaPartesPR: [],
+                esMultiBusquedaD: false,
+                esMultiBusquedaPR: false,
+                
+                orden: 'y',
+                ordenDir: -1,
+                paginaActual: 1,
+                porPagina: 50,
+                
+                // Cache del motor de filtrado de alto rendimiento
+                filteredResults: [],
+                _opcionesAnios: [],
+                _opcionesCat: [],
+                _opcionesUnidad: [],
+                _opcionesProyecto: [],
+                
+                rubrosFijados: new Set(),
+                mostrarSoloFijados: false,
+                
+                exportDropdownOpen: false,
+                
+                themeMode: 'auto',
+                mediaQueryTheme: null,
+                themeMediaHandler: null,
+
+                initApp() {
+                    this.initTheme();
+                    
+                    // Watchers para optimización de búsqueda y limpieza de página
+                    const pr = () => this.pruneFilterSelections();
+                    
+                    this.$watch('busquedaDescripcion', val => {
+                        this.processSearchPatron('D', val);
+                        this.paginaActual = 1;
+                        pr();
+                    });
+
+                    this.$watch('busquedaProyecto', val => {
+                        this.processSearchPatron('PR', val);
+                        this.paginaActual = 1;
+                        pr();
+                    });
+
+                    this.$watch('aniosSeleccionados', () => { this.paginaActual = 1; pr(); }, { deep: true });
+                    this.$watch('categoriasSeleccionadas', () => { this.paginaActual = 1; pr(); }, { deep: true });
+                    this.$watch('unidadesSeleccionadas', () => { this.paginaActual = 1; pr(); }, { deep: true });
+                    this.$watch('proyectosSeleccionados', () => { this.paginaActual = 1; pr(); }, { deep: true });
+                    
+                    this.$watch('mostrarSoloFijados', pr);
+                    
+                    this.cargarDatosAutomatico();
+                },
+
+                processSearchPatron(type, val) {
+                    const patron = (val || '').trim().toLowerCase();
+                    let partes = [];
+                    let multi = false;
+                    
+                    if (patron) {
+                        if (patron.includes('*')) {
+                            partes = patron.split('*').filter(p => p.trim().length > 0).map(p => p.trim());
+                            multi = true;
+                        } else {
+                            partes = patron.split(/\s+/).filter(p => p.length > 0);
+                        }
+                    }
+                    
+                    if (type === 'D') {
+                        this.busquedaPartesD = partes;
+                        this.esMultiBusquedaD = multi;
+                    } else {
+                        this.busquedaPartesPR = partes;
+                        this.esMultiBusquedaPR = multi;
+                    }
+                    this.updateFilteredData();
+                },
+
+                // NUEVA LÓGICA DE ALTO RENDIMIENTO: Una sola pasada por los datos
+                updateFilteredData() {
+                    if (this.loading) return;
+                    
+                    const start = performance.now();
+                    
+                    const anioSels = this.aniosSeleccionados.length > 0 ? new Set(this.aniosSeleccionados) : null;
+                    const catSels = this.categoriasSeleccionadas.length > 0 ? new Set(this.categoriasSeleccionadas) : null;
+                    const uniSels = this.unidadesSeleccionadas.length > 0 ? new Set(this.unidadesSeleccionadas) : null;
+                    const proySels = this.proyectosSeleccionados.length > 0 ? new Set(this.proyectosSeleccionados) : null;
+                    
+                    const partsD = this.busquedaPartesD;
+                    const partsPR = this.busquedaPartesPR;
+                    const soloFijados = this.mostrarSoloFijados;
+
+                    const resAnio = new Set();
+                    const resCat = new Set();
+                    const resUni = new Set();
+                    const resProy = new Set();
+                    const resFinal = [];
+
+                    const data = this.rubros;
+                    const len = data.length;
+
+                    for (let i = 0; i < len; i++) {
+                        const r = data[i];
+                        
+                        // Usar valores pre-normalizados
+                        const ry = r._y;
+                        const rc = r._c;
+                        const ru = r._u;
+                        const rpr = r._pr;
+                        const rd_low = r._d_low;
+                        const rpr_low = r._pr_low;
+
+                        const mAnio = !anioSels || anioSels.has(ry);
+                        const mCat = !catSels || catSels.has(rc);
+                        const mUni = !uniSels || uniSels.has(ru);
+                        const mProy = !proySels || proySels.has(rpr);
+                        const mFij = !soloFijados || this.rubrosFijados.has(r._uid);
+                        
+                        // Búsqueda de texto (AND logic)
+                        let mTextD = true;
+                        if (partsD.length > 0) {
+                            for(let j=0; j<partsD.length; j++) {
+                                if (!rd_low.includes(partsD[j])) { mTextD = false; break; }
+                            }
+                        }
+                        
+                        let mTextPR = true;
+                        if (partsPR.length > 0) {
+                            for(let j=0; j<partsPR.length; j++) {
+                                if (!rpr_low.includes(partsPR[j])) { mTextPR = false; break; }
+                            }
+                        }
+
+                        const mGlobal = mTextD && mTextPR && mFij;
+
+                        // Resultados tabla: debe cumplir TODO
+                        if (mAnio && mCat && mUni && mProy && mGlobal) {
+                            resFinal.push(r);
+                        }
+
+                        // Opciones dropdowns: cumple todo EXCEPTO su propia categoría (cascada)
+                        if (mCat && mUni && mProy && mGlobal) resAnio.add(ry);
+                        if (mAnio && mUni && mProy && mGlobal) resCat.add(rc);
+                        if (mAnio && mCat && mProy && mGlobal) resUni.add(ru);
+                        if (mAnio && mCat && mUni && mGlobal) resProy.add(rpr);
+                    }
+
+                    this.filteredResults = resFinal;
+                    this._opcionesAnios = Array.from(resAnio).sort((a,b) => b-a);
+                    this._opcionesCat = Array.from(resCat).sort();
+                    this._opcionesUnidad = Array.from(resUni).sort();
+                    this._opcionesProyecto = Array.from(resProy).sort();
+                    
+                    this.sortResults();
+                    console.log(`Filtrado completado en ${performance.now() - start}ms`);
+                },
+
+                sortResults() {
+                    const col = this.orden;
+                    const dir = this.ordenDir;
+                    this.filteredResults.sort((a, b) => {
+                        let valA = a[col] ?? '';
+                        let valB = b[col] ?? '';
+                        if (typeof valA === 'string') {
+                            if (valA < valB) return -1 * dir;
+                            if (valA > valB) return 1 * dir;
+                        } else {
+                            return (valA - valB) * dir;
+                        }
+                        return 0;
+                    });
+                },
+
+                initTheme() {
+                    const savedMode = localStorage.getItem('ripconciv_theme_mode');
+                    this.themeMode = ['auto', 'dark', 'light'].includes(savedMode) ? savedMode : 'auto';
+                    this.applyTheme();
+
+                    this.mediaQueryTheme = window.matchMedia('(prefers-color-scheme: dark)');
+                    this.themeMediaHandler = () => {
+                        if (this.themeMode === 'auto') {
+                            this.applyTheme();
+                        }
+                    };
+
+                    if (this.mediaQueryTheme.addEventListener) {
+                        this.mediaQueryTheme.addEventListener('change', this.themeMediaHandler);
+                    } else if (this.mediaQueryTheme.addListener) {
+                        this.mediaQueryTheme.addListener(this.themeMediaHandler);
+                    }
+                },
+
+                applyTheme() {
+                    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+                    const useDark = this.themeMode === 'dark' || (this.themeMode === 'auto' && prefersDark);
+                    document.documentElement.classList.toggle('dark', useDark);
+                },
+
+                cycleTheme() {
+                    const nextMode = this.themeMode === 'auto'
+                        ? 'dark'
+                        : (this.themeMode === 'dark' ? 'light' : 'auto');
+                    this.themeMode = nextMode;
+                    localStorage.setItem('ripconciv_theme_mode', nextMode);
+                    this.applyTheme();
+                },
+
+                get themeLabel() {
+                    if (this.themeMode === 'dark') return 'Oscuro';
+                    if (this.themeMode === 'light') return 'Claro';
+                    return 'Auto';
+                },
+
+                get themeIcon() {
+                    if (this.themeMode === 'dark') return 'fa-moon';
+                    if (this.themeMode === 'light') return 'fa-sun';
+                    return 'fa-circle-half-stroke';
+                },
+
+                async cargarDatosAutomatico() {
+                    this.loading = true;
+                    this.waitingForFile = false;
+
+                    // Prioridad 1: Cargar desde el archivo .js (RUBROS_DATA)
+                    if (typeof RUBROS_DATA !== 'undefined' && Array.isArray(RUBROS_DATA)) {
+                        console.log("Cargando datos desde preciosripconciv.js...");
+                        this.fuenteDatos = 'preciosripconciv.js';
+                        this.cargarRubrosDesdeJS(RUBROS_DATA);
+                        return;
+                    }
+
+                    // Prioridad 2: Intentar cargar desde el archivo .csv (para compatibilidad)
+                    try {
+                        console.log("Intentando cargar desde preciosripconciv.csv...");
+                        this.fuenteDatos = 'preciosripconciv.csv';
+                        const response = await fetch('preciosripconciv.csv', { cache: 'no-store' });
+                        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                        const csvText = await response.text();
+                        this.cargarRubrosDesdeCSV(csvText);
+                    } catch (err) {
+                        this.loading = false;
+                        this.waitingForFile = true;
+                        console.warn("No se encontraron datos automáticos. Por favor, seleccione el archivo manualmente.", err);
+                    }
+                },
+
+                normalizarRubros(datos) {
+                    return datos.map((r, i) => {
+                        const y = String(r.y ?? '').trim();
+                        const c = String(r.c ?? '').trim();
+                        const u = String(r.u ?? '').trim();
+                        const pr = String(r.pr ?? '').trim();
+                        const d = String(r.d ?? '').trim();
+                        return {
+                            ...r,
+                            _uid: i,
+                            y, c, u, pr, d,
+                            _y: y,
+                            _c: c,
+                            _u: u,
+                            _pr: pr,
+                            _d_low: d.toLowerCase(),
+                            _pr_low: pr.toLowerCase()
+                        };
+                    });
+                },
+
+                cargarRubrosDesdeJS(datos) {
+                    if (!Array.isArray(datos) || datos.length === 0) {
+                        throw new Error("El archivo de datos está vacío.");
+                    }
+                    this.rubros = this.normalizarRubros(datos);
+                    this.loading = false;
+                    this.waitingForFile = false;
+                    this.$nextTick(() => this.updateFilteredData());
+                },
+
+                handleFileSelect(event) {
+                    const file = event.target.files[0];
+                    if (!file) return;
+
+                    this.fuenteDatos = file.name;
+                    this.loading = true;
+                    this.waitingForFile = false;
+
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        try {
+                            const contenido = e.target.result;
+                            this.cargarRubrosDesdeCSV(contenido);
+                        } catch (err) {
+                            this.loading = false;
+                            this.waitingForFile = true;
+                            alert("Error al procesar el archivo: " + err.message);
+                        }
+                    };
+                    
+                    reader.onerror = () => {
+                        this.loading = false;
+                        this.waitingForFile = true;
+                        alert("Error al leer el archivo.");
+                    };
+                    
+                    reader.readAsText(file);
+                },
+
+                cargarRubrosDesdeCSV(csvText) {
+                    const parsedData = this.parseCSVContent(csvText);
+                    if (!Array.isArray(parsedData) || parsedData.length === 0) {
+                        throw new Error("El CSV está vacío o no contiene filas válidas.");
+                    }
+
+                    this.rubros = this.normalizarRubros(parsedData);
+                    this.loading = false;
+                    this.waitingForFile = false;
+                    this.$nextTick(() => this.updateFilteredData());
+                },
+
+                parseCSVContent(csvText) {
+                    const normalized = (csvText || '').replace(/^\uFEFF/, '').replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim();
+                    if (!normalized) return [];
+
+                    const lines = normalized.split('\n').filter(line => line.trim() !== '');
+                    if (lines.length < 2) return [];
+
+                    const headerLine = lines[0];
+                    const delimiters = [';', ',', '\t'];
+                    const delimiter = delimiters.reduce((best, current) => {
+                        const count = headerLine.split(current).length - 1;
+                        return count > best.count ? { char: current, count } : best;
+                    }, { char: ',', count: -1 }).char;
+
+                    const headers = this.parseCSVLine(headerLine, delimiter).map(h => this.normalizeHeaderKey(h));
+                    const mappedRows = [];
+
+                    for (let i = 1; i < lines.length; i++) {
+                        const columns = this.parseCSVLine(lines[i], delimiter);
+                        if (columns.every(col => (col || '').trim() === '')) continue;
+
+                        const row = {};
+                        headers.forEach((key, idx) => {
+                            row[key] = (columns[idx] || '').trim();
+                        });
+
+                        const mapped = this.mapRowToRubro(row);
+                        if (mapped.d) {
+                            mappedRows.push(mapped);
+                        }
+                    }
+
+                    return mappedRows;
+                },
+
+                parseCSVLine(line, delimiter) {
+                    const out = [];
+                    let current = '';
+                    let inQuotes = false;
+
+                    for (let i = 0; i < line.length; i++) {
+                        const ch = line[i];
+                        const next = line[i + 1];
+
+                        if (ch === '"') {
+                            if (inQuotes && next === '"') {
+                                current += '"';
+                                i++;
+                            } else {
+                                inQuotes = !inQuotes;
+                            }
+                        } else if (ch === delimiter && !inQuotes) {
+                            out.push(current);
+                            current = '';
+                        } else {
+                            current += ch;
+                        }
+                    }
+                    out.push(current);
+                    return out.map(v => v.trim());
+                },
+
+                normalizeHeaderKey(header) {
+                    return (header || '')
+                        .toLowerCase()
+                        .normalize('NFD')
+                        .replace(/[\u0300-\u036f]/g, '')
+                        .replace(/\s+/g, '')
+                        .replace(/[^a-z0-9]/g, '');
+                },
+
+                mapRowToRubro(row) {
+                    const get = (...keys) => {
+                        for (const key of keys) {
+                            if (row[key] !== undefined && row[key] !== '') return row[key];
+                        }
+                        return '';
+                    };
+
+                    const rawPrice = get('preciousd', 'precio', 'p', 'valor');
+                    const normalizedPrice = this.parsePrice(rawPrice);
+
+                    return {
+                        y: get('ano', 'year', 'y'),
+                        d: get('descripcion', 'detalle', 'rubro', 'd'),
+                        p: normalizedPrice,
+                        u: get('unidad', 'u'),
+                        pr: get('proyecto', 'nombreproyecto', 'pr'),
+                        c: get('categoria', 'rubrocategoria', 'c')
+                    };
+                },
+
+                parsePrice(value) {
+                    if (typeof value === 'number') return value;
+                    const text = String(value || '').trim();
+                    if (!text) return 0;
+
+                    const cleaned = text.replace(/[^\d,.-]/g, '');
+                    const hasComma = cleaned.includes(',');
+                    const hasDot = cleaned.includes('.');
+
+                    if (hasComma && hasDot) {
+                        if (cleaned.lastIndexOf(',') > cleaned.lastIndexOf('.')) {
+                            return Number(cleaned.replace(/\./g, '').replace(',', '.')) || 0;
+                        }
+                        return Number(cleaned.replace(/,/g, '')) || 0;
+                    }
+
+                    if (hasComma) {
+                        return Number(cleaned.replace(',', '.')) || 0;
+                    }
+                    return Number(cleaned) || 0;
+                },
+
+                reintentarCarga() {
+                    this.cargarDatosAutomatico();
+                },
+
+                toggleFijar(item) {
+                    if (this.rubrosFijados.has(item._uid)) {
+                        this.rubrosFijados.delete(item._uid);
+                    } else {
+                        this.rubrosFijados.add(item._uid);
+                    }
+                },
+
+                desfijarTodos() {
+                    this.rubrosFijados.clear();
+                },
+
+                /** Filtros optimizados en cascada */
+
+                pruneFilterSelections() {
+                    this.updateFilteredData();
+                },
+
+                get opcionesAnios() { return this._opcionesAnios || []; },
+                get opcionesCat() { return this._opcionesCat || []; },
+                get opcionesUnidad() { return this._opcionesUnidad || []; },
+                get opcionesProyecto() { return this._opcionesProyecto || []; },
+
+                get filteredRubros() {
+                    return this.filteredResults || [];
+                },
+
+                get hasActiveFilters() {
+                    return this.busquedaDescripcion !== '' || 
+                           this.busquedaProyecto !== '' || 
+                           this.aniosSeleccionados.length > 0 ||
+                           this.categoriasSeleccionadas.length > 0 ||
+                           this.unidadesSeleccionadas.length > 0 ||
+                           this.proyectosSeleccionados.length > 0 ||
+                           this.mostrarSoloFijados;
+                },
+
+                // Funciones auxiliares para selección múltiple
+                toggleSeleccion(storage, val) {
+                    const idx = this[storage].indexOf(val);
+                    if (idx > -1) {
+                        this[storage].splice(idx, 1);
+                    } else {
+                        this[storage].push(val);
+                    }
+                },
+
+                seleccionarTodos(key, storage) {
+                    const available = (key === 'y') ? this.opcionesAnios : (key === 'c' ? this.opcionesCat : (key === 'u' ? this.opcionesUnidad : this.opcionesProyecto));
+                    this[storage] = [...available];
+                },
+
+                limpiarSeleccion(storage) {
+                    this[storage] = [];
+                },
+                
+                get itemsFiltradosAnio() {
+                    const p = this.anioBusquedaInterna.toLowerCase();
+                    return this.opcionesAnios.filter(a => String(a).includes(p));
+                },
+                
+                get itemsFiltradosCat() {
+                    const p = this.categoriaBusquedaInterna.toLowerCase();
+                    return this.opcionesCat.filter(c => c.toLowerCase().includes(p));
+                },
+                
+                get itemsFiltradosUni() {
+                    const p = this.unidadBusquedaInterna.toLowerCase();
+                    return this.opcionesUnidad.filter(u => u.toLowerCase().includes(p));
+                },
+                
+                get itemsFiltradosProy() {
+                    const p = this.proyectoBusquedaInterna.toLowerCase();
+                    return this.opcionesProyecto.filter(pr => pr.toLowerCase().includes(p));
+                },
+
+                // FUNCIÓN CORREGIDA: Ahora * actúa como separador AND (sin importar orden)
+                coincideConPatron(texto, patron) {
+                    if (!patron || !texto) return true;
+                    
+                    const textoLower = (texto || '').toLowerCase();
+                    const patronLower = patron.toLowerCase();
+                    
+                    // Si el patrón contiene *, dividir por * y verificar que TODAS las partes estén presentes
+                    // SIN importar el orden en que aparezcan en el texto
+                    if (patron.includes('*')) {
+                        const partes = patronLower.split('*').filter(p => p.trim().length > 0);
+                        
+                        // Si no hay partes válidas después de dividir, no filtrar
+                        if (partes.length === 0) return true;
+                        
+                        // Verificar que CADA parte esté presente en el texto (en cualquier posición y orden)
+                        return partes.every(parte => textoLower.includes(parte.trim()));
+                    }
+                    
+                    // Si no hay *, dividir por espacios y verificar que todas las palabras estén presentes
+                    const palabras = patronLower.split(/\s+/).filter(p => p.length > 0);
+                    
+                    if (palabras.length === 0) return true;
+                    
+                    return palabras.every(palabra => textoLower.includes(palabra));
+                },
+
+                get totalPaginas() {
+                    return Math.ceil(this.filteredResults.length / this.porPagina) || 1;
+                },
+
+                get paginatedRubros() {
+                    const start = (this.paginaActual - 1) * this.porPagina;
+                    return this.filteredResults.slice(start, start + this.porPagina);
+                },
+
+                resaltarCoincidenciasDescripcion(texto) {
+                    if (!this.busquedaDescripcion || !texto) return this.escapeHtml(texto);
+                    
+                    const patron = this.busquedaDescripcion.trim();
+                    
+                    let resultado = this.escapeHtml(texto);
+                    const textoLower = texto.toLowerCase();
+                    const patronLower = patron.toLowerCase();
+                    
+                    // Obtener todas las partes a resaltar
+                    let partes = [];
+                    if (patron.includes('*')) {
+                        partes = patronLower.split('*').filter(p => p.trim().length > 0).map(p => p.trim());
+                    } else {
+                        partes = patronLower.split(/\s+/).filter(p => p.length > 0);
+                    }
+                    
+                    // Resaltar cada parte encontrada
+                    partes.forEach(parte => {
+                        const escapedParte = parte.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                        const regex = new RegExp(`(${escapedParte})`, 'gi');
+                        resultado = resultado.replace(regex, '<mark class="bg-yellow-200 dark:bg-yellow-800 text-gray-900 dark:text-gray-100 px-0.5 rounded">$1</mark>');
+                    });
+                    
+                    return resultado;
+                },
+
+                resaltarCoincidenciasProyecto(texto) {
+                    if (!this.busquedaProyecto || !texto) return this.escapeHtml(texto);
+                    
+                    const patron = this.busquedaProyecto.trim();
+                    
+                    let resultado = this.escapeHtml(texto);
+                    const patronLower = patron.toLowerCase();
+                    
+                    let partes = [];
+                    if (patron.includes('*')) {
+                        partes = patronLower.split('*').filter(p => p.trim().length > 0).map(p => p.trim());
+                    } else {
+                        partes = patronLower.split(/\s+/).filter(p => p.length > 0);
+                    }
+                    
+                    partes.forEach(parte => {
+                        const escapedParte = parte.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                        const regex = new RegExp(`(${escapedParte})`, 'gi');
+                        resultado = resultado.replace(regex, '<mark class="bg-purple-200 dark:bg-purple-800 text-gray-900 dark:text-gray-100 px-0.5 rounded">$1</mark>');
+                    });
+                    
+                    return resultado;
+                },
+
+                escapeHtml(text) {
+                    if (!text) return '';
+                    const div = document.createElement('div');
+                    div.textContent = text;
+                    return div.innerHTML;
+                },
+
+                ordenarPor(columna) {
+                    if (this.orden === columna) {
+                        this.ordenDir *= -1;
+                    } else {
+                        this.orden = columna;
+                        this.ordenDir = (columna === 'p' || columna === 'y') ? -1 : 1;
+                    }
+                    this.paginaActual = 1;
+                    this.sortResults();
+                },
+
+                resetFilters() {
+                    this.busquedaDescripcion = '';
+                    this.busquedaProyecto = '';
+                    this.aniosSeleccionados = [];
+                    this.categoriasSeleccionadas = [];
+                    this.unidadesSeleccionadas = [];
+                    this.proyectosSeleccionados = [];
+                    this.anioDropdownOpen = false;
+                    this.categoriaDropdownOpen = false;
+                    this.unidadDropdownOpen = false;
+                    this.proyectoDropdownOpen = false;
+                    this.mostrarSoloFijados = false;
+                    this.paginaActual = 1;
+                },
+
+                formatearMoneda(valor) {
+                    return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(valor);
+                },
+                
+                truncate(str, n) {
+                    if (!str) return '';
+                    return (str.length > n) ? str.substr(0, n-1) + '...' : str;
+                },
+
+                exportFiltrados() {
+                    const data = this.filteredResults;
+                    if (data.length === 0) {
+                        alert('No hay datos para exportar');
+                        return;
+                    }
+                    this.downloadCSV(data, 'rubros_filtrados');
+                },
+
+                exportFijados() {
+                    if (this.rubrosFijados.size === 0) {
+                        alert('No hay rubros fijados para exportar');
+                        return;
+                    }
+                    const data = this.rubros.filter(r => this.rubrosFijados.has(r._uid));
+                    this.downloadCSV(data, 'rubros_fijados');
+                },
+
+                exportarAmbos() {
+                    const filtrados = this.filteredResults;
+                    const fijados = this.rubros.filter(r => this.rubrosFijados.has(r._uid));
+                    
+                    const combinados = [...filtrados];
+                    fijados.forEach(f => {
+                        if (!combinados.find(c => c._uid === f._uid)) {
+                            combinados.push(f);
+                        }
+                    });
+                    
+                    if (combinados.length === 0) {
+                        alert('No hay datos para exportar');
+                        return;
+                    }
+                    
+                    this.downloadCSV(combinados, 'rubros_filtrados_y_fijados');
+                },
+
+                downloadCSV(data, filename) {
+                    const headers = ["Año", "Descripción", "Precio (USD)", "Unidad", "Proyecto", "Categoría", "Fijado"];
+                    
+                    const rows = data.map(r => [
+                        r.y, 
+                        `"${(r.d || '').replace(/"/g, '""')}"`, 
+                        r.p, 
+                        `"${(r.u || '')}"`, 
+                        `"${(r.pr || '').replace(/"/g, '""')}"`, 
+                        `"${(r.c || '')}"`,
+                        this.rubrosFijados.has(r._uid) ? 'Sí' : 'No'
+                    ]);
+                    
+                    const csvContent = "\uFEFF"
+                        + headers.join(",") + "\n" 
+                        + rows.map(e => e.join(",")).join("\n");
+                    
+                    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+                    const url = URL.createObjectURL(blob);
+                    const link = document.createElement("a");
+                    link.setAttribute("href", url);
+                    link.setAttribute("download", `${filename}_${new Date().toISOString().slice(0,10)}.csv`);
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                    URL.revokeObjectURL(url);
+                }
+            }
+        }
+    </script>
+</body>
+</html>
+
