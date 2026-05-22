@@ -1,0 +1,85 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+    body { font-family: 'Inter', sans-serif; }
+    [x-cloak] { display: none !important; }
+}
+
+@layer utilities {
+    .scrollbar-thin::-webkit-scrollbar { width: 6px; }
+    .scrollbar-thin::-webkit-scrollbar-track { background: transparent; }
+    .scrollbar-thin::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+    .dark .scrollbar-thin::-webkit-scrollbar-thumb { background: #475569; }
+    
+    .categoria-truncate {
+        display: block;
+        width: 100%;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+}
+
+@layer components {
+    .pin-checkbox {
+        appearance: none;
+        -webkit-appearance: none;
+        width: 18px;
+        height: 18px;
+        border: 2px solid #6b7280;
+        border-radius: 4px;
+        cursor: pointer;
+        transition: all 0.2s;
+        position: relative;
+    }
+    .pin-checkbox:checked {
+        background-color: #f59e0b;
+        border-color: #f59e0b;
+    }
+    .pin-checkbox:checked::after {
+        content: '📌';
+        position: absolute;
+        top: -2px;
+        left: 0px;
+        font-size: 14px;
+    }
+    .pin-checkbox:hover {
+        border-color: #f59e0b;
+        box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.2);
+    }
+    
+    .pinned-row {
+        background-color: rgba(245, 158, 11, 0.05);
+        border-left: 3px solid #f59e0b;
+    }
+    .dark .pinned-row {
+        background-color: rgba(245, 158, 11, 0.1);
+    }
+
+    .brand-ripconciv {
+        font-size: 1.8rem;
+        font-weight: 900;
+        letter-spacing: 0.1em;
+        background: linear-gradient(135deg, #3b82f6, #1d4ed8, #2563eb);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+        text-transform: uppercase;
+        line-height: 1;
+    }
+    .dark .brand-ripconciv {
+        background: linear-gradient(135deg, #60a5fa, #3b82f6, #818cf8);
+        -webkit-background-clip: text;
+        background-clip: text;
+    }
+    .brand-divider {
+        width: 1px;
+        height: 2.5rem;
+        background: linear-gradient(to bottom, transparent, #cbd5e1, transparent);
+    }
+    .dark .brand-divider {
+        background: linear-gradient(to bottom, transparent, #475569, transparent);
+    }
+}
